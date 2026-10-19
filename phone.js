@@ -40,11 +40,21 @@ async function show({ html, time, frame, seq }) {
   document.documentElement.classList.toggle('frameless', !frame);
   if (html !== shownHtml) {
     shownHtml = html;
-    document.body.classList.remove('backdrop-no-scroll');
     const tpl = document.createElement('template');
     tpl.innerHTML = html;
-    app.replaceChildren(tpl.content);
-    await hydrate(app);
+    // 같은 카메라 화면에서 인식 상태만 바뀌면 다시 그리지 않고 상태·안내만 바꾼다 (사진·스캔 라인이 깜박이지 않게)
+    const cam = app.querySelector('.cam[data-key]');
+    const nextCam = tpl.content.querySelector('.cam[data-key]');
+    if (cam && nextCam && cam.dataset.key === nextCam.dataset.key) {
+      cam.dataset.state = nextCam.dataset.state;
+      cam.querySelector('.cam-status').innerHTML = nextCam.querySelector('.cam-status').innerHTML;
+    } else {
+      document.body.classList.remove('backdrop-no-scroll');
+      app.replaceChildren(tpl.content);
+      await hydrate(app);
+    }
+    // 카메라처럼 어두운 화면에서는 상태 표시줄·홈 막대를 흰색으로
+    document.documentElement.classList.toggle('status-light', !!app.querySelector('[data-statusbar="light"]'));
   }
   post({ type: 'rendered', seq });
 }

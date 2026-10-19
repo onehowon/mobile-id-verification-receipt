@@ -7,11 +7,14 @@ import { STEPS_ASIS, STEPS_TOBE, toCsv, summarize } from './lib/measure.js';
 import { SCENES, BEAT_COUNT, nextPos, prevPos, beatIndex, posFromQuery, formatKst, formatMs, ellipsis } from './lib/scenes.js';
 import * as flow from './lib/demo-flow.js';
 import { sceneView, esc, ymd, auditAt, sealedAt } from './screens.js';
+import { matchScannedRequest } from './lib/scan.js';
+import { renderCameraFrame, decodeFrame, FRAME_W, FRAME_H, DECODER } from './camera.js';
 
 const $ = (id) => document.getElementById(id);
 const DAY = flow.DAY_MS;
 const NONCE_SAFE_MS = 90000; // 요청 유효 120초보다 먼저 새로 만든다 (발표 중 멈춰 있어도 실패하지 않게)
 const ATTACK_BEAT = { birth: 1, forge: 2, replay: 3 };
+const SCAN_DELAY_MS = 2200; // 카메라를 비추고 인식하기까지(연출). 인식 자체는 그 순간 실제로 디코드한다
 const ATTACK_LABEL = { birth: '생년 변조', forge: '서명 위조', replay: '재사용' };
 
 const st = { pos: { s: 0, b: 0 }, side: 'right', playing: false, timer: 0, raf: 0, started: 0, remaining: 0, beatMs: 0, token: 0, drawer: false };
@@ -27,11 +30,29 @@ function ensureReq1() {
     D.req1 = flow.newRequest(D.ctx);
     D.req1At = Date.now();
   }
+  if (D.scanFrame?.nonce !== D.req1.nonce) {
+    // 손님 카메라에 비친 사진: 매장 폰이 띄운 것과 같은 요청 글자로 같은 QR을 그린다
+    const canvas = renderCameraFrame(JSON.stringify(D.req1));
+    D.scanFrame = { nonce: D.req1.nonce, canvas, url: canvas ? canvas.toDataURL('image/jpeg', 0.86) : '' };
+  }
+}
+/** 손님 앱이 사진에서 QR을 실제로 읽고, 읽은 요청이 매장이 띄운 요청(nonce 포함)과 같은지 확인 */
+function scanNow() {
+  ensureReq1();
+  if (D.scan?.nonce === D.req1.nonce) return D.scan;
+  const r = decodeFrame(D.scanFrame.canvas);
+  D.scan = { nonce: D.req1.nonce, text: r.text, ms: r.ms, version: r.version, ...matchScannedRequest(r.text, D.req1) };
+  return D.scan;
+}
+function ensureScanned() {
+  const r = scanNow();
+  if (!r.ok) throw new Error(`손님 앱이 QR을 인식하지 못했어요 (${r.reason})`);
 }
 async function ensureAdult() {
   if (D.adult) return;
-  ensureReq1();
-  D.adult = await flow.runAdultCheck(D.ctx, { request: D.req1 });
+  ensureScanned();
+  // 손님 앱은 QR에서 읽은 요청에 답한다
+  D.adult = await flow.runAdultCheck(D.ctx, { request: D.scan.req });
 }
 async function ensureAttack(kind, verify) {
   if (kind === 'replay') await ensureAdult();
@@ -46,7 +67,8 @@ async function prepare({ s, b }) {
   const id = SCENES[s].id;
   if (id === 'adult') {
     if (b >= 1) ensureReq1();
-    if (b >= 2) await ensureAdult();
+    if (b >= 2) ensureScanned();
+    if (b >= 3) await ensureAdult();
   } else if (id === 'forgery') {
     const kind = SCENES[s].beats[b].attack || 'birth';
     await ensureAttack(kind, b > 0);
@@ -123,6 +145,23 @@ function receiptSections(jws) {
     + sec('영수증 본문 (전체 필드)', kv(Object.entries(d.payload).map(([k, v]) => [`${k} · ${RECEIPT_FIELDS[k] || ''}`, (k === 'iat' || k === 'exp') ? `${v} (${formatKst(v * 1000)})` : String(v)])));
 }
 
+function scanDrawer() {
+  const r = D.scan?.nonce === D.req1.nonce ? D.scan : null;
+  const frame = (more = []) => sec('촬영 이미지', kv([['디코더', DECODER], ['사진', `${FRAME_W}×${FRAME_H} · 매장 폰 화면을 기울이고 흐리게 찍은 모습`], ...more]));
+  if (!r) return sec('QR에서 읽은 요청', '<p class="d-note">아직 인식 전이에요. 카메라에 비친 사진의 픽셀만으로 QR을 읽어요.</p>') + frame() + sec('매장이 띄운 요청', code(D.req1));
+  const q = r.req || {};
+  return sec('QR에서 읽은 요청', r.req ? kv([
+    ['확인 항목', (q.claims || []).map((k) => CLAIM_LABELS[k] || k).join(', ')],
+    ['nonce', q.nonce],
+    ['유효시간', typeof q.exp === 'number' ? `${formatKst(q.exp * 1000)}까지 (발행 후 120초, 1회용)` : '-'],
+    ['매장', `${q.store} (${q.aud})`],
+    ['목적', q.purpose],
+  ]) : '<p class="d-note">읽은 내용이 없어요</p>')
+    + sec('매장 요청과 대조', kv([['nonce', q.nonce === D.req1.nonce ? '일치' : '다름'], ['판정', r.ok ? '일치 · 동의 화면으로' : r.reason]]))
+    + frame([['QR 버전', r.version ? String(r.version) : '-'], ['인식 시간', formatMs(r.ms)]])
+    + sec('읽은 원문', code(r.text || ''));
+}
+
 function drawerHtml() {
   const { s, b } = st.pos;
   const id = SCENES[s].id;
@@ -133,7 +172,8 @@ function drawerHtml() {
         + sec('신뢰하는 발급기관', kv([['id', ISSUER.id], ['kid', ISSUER.kid]]))
         + sec('손님 지갑의 항목', kv(Object.entries(D.ctx.adult.claims).map(([k, v]) => [CLAIM_LABELS[k] || k, JSON.stringify(v)])));
     }
-    if (b === 1) {
+    if (SCENES[s].beats[b].scan) return scanDrawer();
+    if (b === 2) {
       return sec('검증 요청 (QR 내용)', code(D.req1))
         + sec('보낼 항목', kv(Object.keys(D.ctx.adult.claims).map((k) => [CLAIM_LABELS[k] || k, D.req1.claims.includes(k) ? '보냄' : '보내지 않음'])));
     }
@@ -306,6 +346,14 @@ async function go(pos) {
   render();
   syncUrl();
   if (st.playing) schedule(beat.ms);
+  if (beat.scan && D.scan?.nonce !== D.req1.nonce) {
+    // 카메라를 잠시 비춘 뒤 그 사진을 실제로 디코드하고, 결과(초록 가이드 + 인식했어요)를 그린다
+    setTimeout(() => {
+      if (tok !== st.token) return;
+      scanNow();
+      render();
+    }, SCAN_DELAY_MS);
+  }
 }
 
 function syncUrl() {

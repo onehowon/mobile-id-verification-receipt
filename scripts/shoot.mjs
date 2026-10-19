@@ -15,8 +15,10 @@ const CHROME = process.env.CHROME || '/Applications/Google Chrome.app/Contents/M
 const PORT = 9333;
 
 const SCENES = [
-  { name: '1-result', q: 'scene=1&beat=3', mobile: true },
-  { name: '1-consent', q: 'scene=1&beat=2', mobile: true },
+  { name: '1-result', q: 'scene=1&beat=4', mobile: true },
+  { name: '1-scan', q: 'scene=1&beat=2', mobile: true, expect: 'scanning' },
+  { name: '1-scan-ok', q: 'scene=1&beat=2', mobile: true, wait: 3200, expect: 'ok' },
+  { name: '1-consent', q: 'scene=1&beat=3', mobile: true },
   { name: '2-birth', q: 'scene=2&beat=2', mobile: true },
   { name: '2-forge', q: 'scene=2&beat=3' },
   { name: '2-replay', q: 'scene=2&beat=4' },
@@ -32,10 +34,11 @@ const VIEWPORTS = [
 const MOBILE = { tag: 'mobile', width: 390, height: 844, deviceScaleFactor: 2, mobile: true };
 
 const SHOTS = [
-  ...SCENES.flatMap((s) => VIEWPORTS.map((v) => ({ file: `${s.name}-${v.tag}.png`, q: s.q, vp: v }))),
-  ...SCENES.filter((s) => s.mobile).map((s) => ({ file: `${s.name}-mobile.png`, q: s.q, vp: MOBILE })),
-  { file: 'drawer-1440.png', q: 'scene=1&beat=3&drawer=1', vp: VIEWPORTS[0] },
-  { file: '1-result-1920.png', q: 'scene=1&beat=3', vp: { tag: '1920', width: 1920, height: 1080 } },
+  ...SCENES.flatMap((s) => VIEWPORTS.map((v) => ({ ...s, file: `${s.name}-${v.tag}.png`, vp: v }))),
+  ...SCENES.filter((s) => s.mobile).map((s) => ({ ...s, file: `${s.name}-mobile.png`, vp: MOBILE })),
+  { file: 'drawer-1440.png', q: 'scene=1&beat=4&drawer=1', vp: VIEWPORTS[0] },
+  { file: 'drawer-scan-1440.png', q: 'scene=1&beat=2&drawer=1', vp: VIEWPORTS[0], wait: 3200, expect: 'ok' },
+  { file: '1-result-1920.png', q: 'scene=1&beat=4', vp: { tag: '1920', width: 1920, height: 1080 } },
 ].filter((s) => !ONLY || s.file.includes(ONLY));
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -67,6 +70,14 @@ const LAYOUT_CHECK = `(async () => {
         if (!sheet) continue;
         const btn = R(sheet.querySelector('ion-button') || sheet);
         if (btn.bottom > doc.defaultView.innerHeight - 4) out.push(id + ': 바텀시트 버튼이 화면 밖 ' + Math.round(btn.bottom - doc.defaultView.innerHeight) + 'px');
+      }
+      // 카메라 화면: 안내 → 가이드 → 인식 표시 → 손전등·닫기가 위에서 아래로 겹치지 않고 화면 안에
+      const cam = doc.querySelector('.cam');
+      if (cam) {
+        const parts = ['.cam-hint', '.cam-guide', '.cam-status', '.cam-bar'].map((q) => cam.querySelector(q)).filter((el) => el && el.getBoundingClientRect().height > 0).map(R);
+        for (let i = 1; i < parts.length; i++) if (parts[i].top < parts[i - 1].bottom - 0.5) out.push(id + ': 카메라 화면 요소 겹침 ' + i);
+        if (parts.at(-1).bottom > doc.defaultView.innerHeight + 0.5) out.push(id + ': 카메라 버튼이 화면 밖');
+        if (cam.querySelector('.cam-feed') && !cam.querySelector('.cam-feed').complete) out.push(id + ': 카메라 사진이 안 그려짐');
       }
       for (const el of doc.querySelectorAll('.result-title, .lead, ion-label h3, ion-label p, ion-note')) {
         if (el.scrollWidth > el.clientWidth + 1) out.push(id + ': 가로 잘림 「' + el.textContent.trim().slice(0, 20) + '」');
@@ -122,8 +133,13 @@ async function shoot(errors, problems) {
     await tab.send('Emulation.setDeviceMetricsOverride', { width: v.width, height: v.height, deviceScaleFactor: v.deviceScaleFactor || 1, mobile: !!v.mobile });
     await tab.send('Page.navigate', { url: `${BASE}?${shot.q}` });
     await waitReady(tab.evaluate, shot.file, errors);
-    await sleep(900); // 바텀시트 올라오는 애니메이션
+    await sleep(shot.wait || 900); // 바텀시트 올라오는 애니메이션, 카메라 인식(2.2초 뒤)
     const issues = await tab.evaluate(LAYOUT_CHECK);
+    if (shot.expect) {
+      // 손님 폰 카메라가 실제 디코드 결과로 바뀌었는지 (ok = 매장 요청과 nonce까지 일치)
+      const state = await tab.evaluate(`document.getElementById('screenLeft').contentDocument.querySelector('.cam')?.dataset.state`);
+      if (state !== shot.expect) problems.push(`${shot.file}: 카메라 상태 ${state} (기대 ${shot.expect})`);
+    }
     for (const x of issues || []) problems.push(`${shot.file}: ${x}`);
     const png = await tab.send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false });
     writeFileSync(join(OUT, shot.file), Buffer.from(png.result.data, 'base64'));

@@ -27,16 +27,22 @@ const CHECK = '<svg class="svg-mark svg-ok" slot="end" viewBox="0 0 24 24" aria-
 const PERSON = '<svg viewBox="0 0 46 52" aria-hidden="true"><circle cx="23" cy="17" r="11"/><path d="M0 52c0-13 10-21 23-21s23 8 23 21z"/></svg>';
 
 // ---------- 조각 ----------
+/** QR 모듈 행렬. 한글이 깨지지 않게 UTF-8 바이트로 넣는다 (카메라 사진도 같은 행렬로 그린다) */
+export function makeQr(text) {
+  const lib = globalThis.qrcode;
+  if (!lib) return null;
+  try {
+    if (lib.stringToBytesFuncs?.['UTF-8']) lib.stringToBytes = lib.stringToBytesFuncs['UTF-8'];
+    const q = lib(0, 'L');
+    q.addData(text, 'Byte');
+    q.make();
+    return q;
+  } catch { return null; /* 너무 긴 데이터 */ }
+}
+
 export function qr(text, cls = '') {
-  let inner = '<div class="qr-missing">QR 라이브러리를<br>불러오지 못했어요</div>';
-  if (globalThis.qrcode) {
-    try {
-      const q = globalThis.qrcode(0, 'L');
-      q.addData(text);
-      q.make();
-      inner = q.createSvgTag({ cellSize: 4, margin: 0, scalable: true });
-    } catch { /* 너무 긴 데이터: 안내 문구 유지 */ }
-  }
+  const q = makeQr(text);
+  const inner = q ? q.createSvgTag({ cellSize: 4, margin: 0, scalable: true }) : '<div class="qr-missing">QR 라이브러리를<br>불러오지 못했어요</div>';
   return `<div class="qr ${cls}" role="img" aria-label="QR 코드">${inner}</div>`;
 }
 
@@ -93,17 +99,50 @@ function wire(dir, from, to, main, sub, bad = false) {
 const idle = (t = '아직 주고받은 정보가 없어요') => `<p class="wire-idle">${esc(t)}</p>`;
 
 // ---------- 장면 ① 성인 확인 ----------
+const ICON_SCAN_OK = '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="12" fill="currentColor"/><path d="M7 12.5l3.2 3.2L17 9" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+
+/** 카메라 인식 상태: 사진이 없으면 실패, 지금 요청을 읽었으면 그 결과, 아니면 찾는 중 */
+export function scanState(D) {
+  if (!D.scanFrame?.url) return 'fail';
+  if (D.scan?.nonce === D.req1.nonce) return D.scan.ok ? 'ok' : 'fail';
+  return 'scanning';
+}
+
+/** 손님 앱 카메라 화면. data-key가 같으면 phone.js가 다시 그리지 않고 상태만 바꾼다(스캔 라인이 끊기지 않게) */
+function cameraPage(D) {
+  const state = scanState(D);
+  const status = state === 'ok'
+    ? `<span class="cam-pill">${ICON_SCAN_OK}인식했어요</span>`
+    : state === 'fail' ? `<span class="cam-pill">${esc(D.scan?.reason || 'QR을 읽지 못했어요')}</span>` : '';
+  return `<div class="ion-page cam-page" data-statusbar="light">
+  <div class="cam" data-key="${esc(D.req1.nonce)}" data-state="${state}">
+    <div class="cam-top"><p class="cam-title">QR 촬영</p><p class="cam-hint">매장 화면의 QR을 <br>네모 안에 맞춰 주세요</p></div>
+    <div class="cam-view">
+      ${D.scanFrame?.url ? `<img class="cam-feed" src="${D.scanFrame.url}" alt="카메라에 비친 매장 폰 화면의 QR">` : ''}
+      <div class="cam-guide" aria-hidden="true"><i></i><i></i><i></i><i></i><span class="cam-line"></span></div>
+    </div>
+    <p class="cam-status" role="status">${status}</p>
+    <div class="cam-bar">
+      <button type="button" class="cam-btn" aria-label="손전등"><ion-icon name="flashlight-outline"></ion-icon></button>
+      <button type="button" class="cam-btn" aria-label="닫기"><ion-icon name="close-outline"></ion-icon></button>
+    </div>
+  </div>
+</div>`;
+}
+
 function sceneAdult(D, b) {
   const now = D.adult?.at || D.req1At || Date.now();
   const t = hhmm(now);
   let left, right, w;
 
-  if (b < 2) {
+  if (b === 1) {
+    left = cameraPage(D);
+  } else if (b < 3) {
     left = page({
       title: '내 신분증', app: WALLET,
       body: `${idCard(P.adult)}${group('제출 내역', [item('아직 제출한 내역이 없어요', {})])}`,
-      footer: button('QR 스캔', { act: '', fill: 'outline', disabled: b === 1 }),
-      sheet: b === 1 ? `<p class="lead">${esc(STORE)}에<br>'만 19세 이상' 여부만 보내요</p>
+      footer: button('QR 스캔', { fill: 'outline', disabled: b === 2 }),
+      sheet: b === 2 ? `<p class="lead">${esc(STORE)}에<br>'만 19세 이상' 여부만 보내요</p>
         ${group('보내는 정보', [item('만 19세 이상인지', { sub: '예 / 아니오 하나', mark: CHECK })])}
         ${group('보내지 않는 정보', [item('이름 · 생년월일 · 주소', { cls: 'give-no' })], `목적: ${DEFAULT_PURPOSE} · 한 번만 쓰는 요청이에요`)}
         <div class="sheet-btn">${button('보내기')}</div>` : '',
@@ -126,13 +165,16 @@ function sceneAdult(D, b) {
       footer: button('성인 확인'),
     });
     w = idle();
-  } else if (b === 1) {
+  } else if (b < 3) {
+    // 손님이 찍는 동안과 동의하는 동안 매장 폰은 같은 화면 그대로(손님 응답 대기)
     right = page({
       title: 'QR 보여 주기', app: VERIFIER, sub: STORE,
       body: `<div class="qr-card">${qr(JSON.stringify(D.req1))}${waiting('손님 응답을 기다리고 있어요')}</div>
         ${group('', [item('확인 항목', { note: '만 19세 이상' }), item('유효 시간', { note: '2분 · 1회용' })])}`,
     });
-    w = wire('left', '매장 폰', '손님 폰', '요청: 만 19세 이상 여부', '1회용 번호가 들어 있어요');
+    w = b === 1
+      ? wire('left', '매장 폰', '손님 폰', '요청 QR', '만 19세 이상 여부 · 1회용 번호')
+      : wire('left', '매장 폰', '손님 폰', '요청 QR을 읽었어요', '손님 폰은 아직 아무것도 보내지 않았어요');
   } else {
     const ok = D.adult.out.report.ok && D.adult.out.result === 'Y';
     right = page({
