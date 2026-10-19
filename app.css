@@ -186,6 +186,7 @@ body.drawer-open .shell:not(.is-forced) { margin-right: var(--drawer-w); }
 .cmp-big { font-size: 1.8rem; font-weight: 700; color: var(--ink); line-height: 1.3; letter-spacing: -.01em; }
 .cmp-new .cmp-big { color: var(--primary-text); }
 .cmp-sub { margin-top: .4rem; font-size: var(--l3); color: var(--sub); }
+.cmp-delta { margin-left: .4rem; font-size: .55em; font-weight: 700; color: var(--primary-text); vertical-align: middle; }
 .cmp-steps { margin-top: .6rem; display: flex; flex-wrap: wrap; gap: .2rem .4rem; font-size: var(--l3); color: var(--text); }
 .cmp-steps li + li::before { content: '→'; margin-right: .4rem; color: var(--sub); }
 .cmp-actions { margin-top: 1.2rem; display: flex; gap: .8rem; justify-content: flex-end; align-items: center; }
@@ -288,7 +289,7 @@ body.drawer-open .shell:not(.is-forced) { margin-right: var(--drawer-w); }
   .cmp > .cmp-h:first-child { display: none; }
   .cmp > * { padding: 1rem 1.2rem; }
   .cmp-big { font-size: var(--l2); }
-  .cmp-steps { display: none; }
+  .cmp-steps, .cmp-def { display: none; }
   .cmp-sub { font-size: var(--l4); }
   .compare { margin-top: 1rem; }
   .cmp-actions .scr-caption { flex-basis: 100%; font-size: var(--l4); }

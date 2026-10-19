@@ -2,7 +2,7 @@ import { test, describe, before } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { SCENES, TOTAL_MS, BEAT_COUNT, nextPos, prevPos, beatIndex, posFromQuery, failureCopy, formatKst } from '../lib/scenes.js';
-import { setupDemo, runAdultCheck, runAttack, runAudit, runOwnerForgery, runBenchmark, runSealed, ATTACK_KINDS, PEOPLE } from '../lib/demo-flow.js';
+import { setupDemo, runAdultCheck, runAttack, runAudit, runOwnerForgery, runBenchmark, runSealed, measureStages, ATTACK_KINDS, PEOPLE } from '../lib/demo-flow.js';
 import { decodeJws } from '../lib/jose.js';
 import { toCsv } from '../lib/measure.js';
 
@@ -90,6 +90,9 @@ describe('장면 흐름 (실제 서명·검증)', () => {
     assert.equal(sum.n, 30);
     assert.ok(sum.median > 0);
     assert.ok(toCsv(ctx.measures).split('\n').length > 30);
+    const rows = await measureStages(ctx, { n: 2 }); // 기기 측정(scripts/measure.mjs)과 같은 함수, Node에서는 QR 디코드 없이
+    assert.equal(rows.length, 2);
+    for (const r of rows) for (const k of ['issuer_sig', 'store_verify', 'receipt_sign', 'audit_15']) assert.ok(r[k] >= 0, k);
   });
 
   test('⑤ 봉인 사본: 기한 안 유효, 기한 뒤 무효', async () => {

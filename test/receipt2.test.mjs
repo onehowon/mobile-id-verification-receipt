@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { generateKeyJwk, decodeJws } from '../lib/jose.js';
 import { ISSUER, ISSUER_KEYS, REGISTRY, LEDGER } from '../lib/demo-keys.js';
 import { issueAgeBatch, issueCredential, AgeWallet, createPresentation } from '../lib/sdjwt.js';
-import { notYouth, nextJan1Kst, kstMidnight } from '../lib/age.js';
+import { notYouth, nextJan1Kst, kstMidnight, kstWeekStart } from '../lib/age.js';
 import { NonceRegistry, createRequest, verifyAtStore } from '../lib/verifier.js';
 import { createStoreCert } from '../lib/receipt.js';
 import { verifyReceiptV2, issueReceiptV2, VerificationLedger, findReuse, linkHandles, RECEIPT_CHECKS } from '../lib/receipt2.js';
@@ -55,7 +55,9 @@ describe('영수증 v2: 정상', () => {
     assert.equal(r.payload.result, 'Y');
     assert.ok(decodeJws(s.receipt).payload.vp.length > 0);
     const ent = ledger.entries.find((e) => e.rh === r.anchor.rh);
-    assert.deepEqual(Object.keys(ent).sort(), ['result', 'rh', 'store', 't'], '원장에는 해시·매장·시각·결과만');
+    assert.deepEqual(Object.keys(ent).sort(), ['ph', 'result', 'rh', 'sp', 't'], '원장에는 해시·매장 가명·시각·결과만');
+    assert.notEqual(ent.sp, A.id, '원장에는 실제 매장 ID 대신 등록기관이 매긴 가명');
+    assert.equal(ent.sp, decodeJws(A.cert).payload.pid);
   });
 });
 
@@ -143,7 +145,7 @@ describe('영수증 v2: 업주 공격', () => {
   test('T11 매장 키 폐기: 폐기 시각 이후 영수증은 실패, 이전 영수증은 통과', async () => {
     const before = await sale(A, new AgeWallet(adultBatch.slice(9, 10)), 'POS-2012', NOW);
     const after = await sale(A, new AgeWallet(adultBatch.slice(10, 11)), 'POS-2013', NOW + 3600000);
-    const revokedStores = { [A.id]: Math.floor((NOW + 1800000) / 1000) };
+    const revokedStores = { [decodeJws(A.cert).payload.pid]: Math.floor((NOW + 1800000) / 1000) }; // 공개 폐기 목록(매장 가명 기준)
     assert.equal((await audit(before.receipt, { anchor: before.anchor, posTxId: 'POS-2012', revokedStores })).ok, true);
     assert.equal((await audit(after.receipt, { anchor: after.anchor, posTxId: 'POS-2013', revokedStores })).failed, 'store_cert');
   });
@@ -157,17 +159,56 @@ describe('영수증 v2: 업주 공격', () => {
 });
 
 describe('영수증 v2: 개인정보·비연결성', () => {
-  test('T12 같은 사람이 두 매장에서 만든 영수증은 키·서명·salt·시각으로 연결되지 않는다', async () => {
-    const w = new AgeWallet(adultBatch.slice(12, 14));
+  test('T12 같은 날 발급된 두 증명도 홀더 키·salt·iat·exp 어느 것으로도 연결되지 않는다', async () => {
+    const w = new AgeWallet(adultBatch.slice(12, 14)); // 같은 사람, 같은 날(같은 묶음) 발급
     const a = await sale(A, w, 'POS-3001', NOW);
     const b = await sale(B, w, 'B-3001', NOW + 2 * 3600000);
     const ha = await linkHandles(a.receipt);
     const hb = await linkHandles(b.receipt);
-    assert.notEqual(ha.cnfThumb, hb.cnfThumb);
-    assert.notEqual(ha.issuerSig, hb.issuerSig);
-    assert.equal(ha.salts.filter((x) => hb.salts.includes(x)).length, 0);
-    assert.equal(ha.iat, hb.iat, '증명 발급 시각은 하루 단위로 내려 같은 값');
-    assert.equal(ha.iat, kstMidnight(NOW));
+    assert.notEqual(ha.cnfThumb, hb.cnfThumb, '홀더 키');
+    assert.notEqual(ha.issuerSig, hb.issuerSig, '발급기관 서명');
+    assert.equal(ha.salts.filter((x) => hb.salts.includes(x)).length, 0, 'salt');
+    // iat·exp는 그 주에 발급받은 모든 이용자에게 같은 값이다: 다른 사람·다른 요일·다른 시각에 받은 증명과 구별되지 않는다
+    const others = [];
+    // NOW는 2026-10-19(월) 21:42 KST. 같은 주 월요일 새벽·목요일·일요일 밤에 다른 사람들이 받은 증명
+    const SUNDAY = NOW + 6 * DAY_MS + 2 * 3600000 - 60000;
+    for (const [who, at] of [[{ birthdate: '1985-07-07' }, NOW - 21 * 3600000], [{ birthdate: '2001-11-30' }, NOW + 3 * DAY_MS], [ADULT, SUNDAY]]) {
+      const [c] = await issueAgeBatch(who, { issuer: ISSUER, count: 1, now: at });
+      others.push(decodeJws(c.sdjwt.split('~')[0]).payload);
+    }
+    for (const o of others) {
+      assert.equal(o.iat, ha.iat, 'iat는 발급 주 공통값');
+      assert.equal(o.exp, ha.exp, 'exp는 공통 경계');
+    }
+    assert.equal(ha.iat, hb.iat);
+    assert.equal(ha.exp, hb.exp);
+    assert.equal(ha.iat, kstWeekStart(NOW));
+    assert.equal(new Date((ha.iat + 9 * 3600) * 1000).getUTCDay(), 1, '월요일 0시(KST)');
+    assert.notEqual(others[2].iat, kstMidnight(SUNDAY), '발급일(하루 단위)은 남기지 않음');
+  });
+
+  test('T17 매장 A에서 쓴 1회용 증명을 매장 B 영수증에 다시 쓰면 원장 대조로 거부된다', async () => {
+    const item = adultBatch[15];
+    const copy = { sdjwt: item.sdjwt, holderJwk: item.holderJwk }; // 복제된 지갑(같은 증명·같은 키)
+    const a = await sale(A, new AgeWallet([item]), 'POS-3101', NOW);
+    const b = await sale(B, new AgeWallet([copy]), 'B-3101', NOW + 3600000); // 매장 B는 혼자서는 알 수 없음
+    const rb = await audit(b.receipt, { anchor: b.anchor, posTxId: 'B-3101', st: B });
+    assert.equal(rb.failed, 'single_use');
+    assert.match(rb.reason, /다른 매장/);
+    const ra = await audit(a.receipt, { anchor: a.anchor, posTxId: 'POS-3101' });
+    assert.equal(ra.ok, true, '먼저 쓴 영수증은 통과');
+    assert.ok(ra.warnings.some((x) => /뒤에 다른 영수증/.test(x)));
+    // 원장에는 증명 해시만 있고 손님 정보·제시물 원문은 없다
+    const dump = JSON.stringify(ledger.entries);
+    for (const bad of [ADULT.birthdate, 'not_youth', item.sdjwt.split('~')[0], item.holderJwk.x, A.id, B.id]) assert.ok(!dump.includes(bad), bad);
+  });
+
+  test('T18 단속 기관이 기대한 목적과 손님이 서명한 목적이 다르면 거부', async () => {
+    const s = await sale(A, new AgeWallet(adultBatch.slice(16, 17)), 'POS-3201');
+    assert.equal((await audit(s.receipt, { anchor: s.anchor, posTxId: 'POS-3201', expectedPurpose: 'LIQUOR' })).ok, true);
+    const r = await audit(s.receipt, { anchor: s.anchor, posTxId: 'POS-3201', expectedPurpose: 'TOBACCO' });
+    assert.equal(r.failed, 'tx_binding');
+    assert.match(r.reason, /목적/);
   });
 
   test('T14 영수증에 생년월일 공개 항목이 끼어 있으면 거부', async () => {
@@ -201,7 +242,7 @@ describe('연 나이 (청소년 보호법 제2조 제1호)', () => {
     assert.ok(p.exp <= nextJan1Kst(at));
     assert.equal(p.exp, kst('2027-01-01T00:00:00') / 1000);
     const [adultCred] = await issueAgeBatch({ birthdate: '1998-03-14' }, { issuer: ISSUER, count: 1, now: at });
-    assert.equal(decodeJws(adultCred.sdjwt.split('~')[0]).payload.exp - kstMidnight(at), 30 * 86400, 'true 증명은 30일');
+    assert.equal(decodeJws(adultCred.sdjwt.split('~')[0]).payload.exp - kstWeekStart(at), 35 * 86400, 'true 증명은 발급 주 시작부터 5주');
 
     const st = await makeStore('STORE-C');
     const present = async (now) => {

@@ -41,6 +41,10 @@ const SHOTS = [
   { file: 'drawer-audit-1440.png', q: 'scene=3&beat=3&drawer=1', vp: VIEWPORTS[0] },
   { file: 'drawer-scan-1440.png', q: 'scene=1&beat=2&drawer=1', vp: VIEWPORTS[0], wait: 3200, expect: 'ok' },
   { file: '1-result-1920.png', q: 'scene=1&beat=4', vp: { tag: '1920', width: 1920, height: 1080 } },
+  // 기획서 ④-2용 3장 (1440 기준): ① 동의·결과, ② 위조 앱 거부, ③ 구청 재검증과 업주 위조 영수증 거부
+  { file: 'proposal-1.png', q: 'scene=1&beat=4', vp: VIEWPORTS[0] },
+  { file: 'proposal-2.png', q: 'scene=2&beat=3', vp: VIEWPORTS[0] },
+  { file: 'proposal-3.png', q: 'scene=3&beat=4&drawer=1', vp: VIEWPORTS[0] }, // 서랍: 진짜 영수증 15단계 통과 + 업주 위조 2건의 실패 단계
 ].filter((s) => !ONLY || s.file.includes(ONLY));
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));

@@ -10,7 +10,7 @@ import { createStoreCert } from '../lib/receipt.js';
 import { verifyReceiptV2, RECEIPT_FIELDS, RECEIPT_TYP } from '../lib/receipt2.js';
 import { tamperBirth, forgeWithFakeIssuer, stealAndRebind } from '../lib/tamper.js';
 import { createSealedCopy, verifySealedCopy } from '../lib/sealed.js';
-import { toCsv, toRow, summarize } from '../lib/measure.js';
+import { toCsv, toRow, summarize, STEPS_ASIS, STEPS_TOBE, stepReduction } from '../lib/measure.js';
 
 const NOW = Date.parse('2026-10-19T12:00:00+09:00');
 const DAY_MS = 86400000;
@@ -286,5 +286,17 @@ describe('측정', () => {
     const s = summarize(rows.map((r) => r.total_ms));
     assert.equal(s.n, 5);
     assert.ok(s.median > 0 && s.p95 >= s.median);
+  });
+});
+
+describe('단계 수 (기획서 ④-4와 같은 기준)', () => {
+  test('붙임1 QR 제시 5단계 → 3단계, 40% 감소, 한 단계 = 역할이 바뀌기 전까지의 조작 묶음', () => {
+    assert.deepEqual(STEPS_ASIS.map((x) => x.step), ['QR 요청', 'QR 제시', '정보제공 요청', '정보제공 동의', '확인']);
+    assert.equal(STEPS_TOBE.length, 3);
+    assert.equal(stepReduction(), 40);
+    for (const steps of [STEPS_ASIS, STEPS_TOBE]) {
+      for (let i = 1; i < steps.length; i++) assert.notEqual(steps[i].who, steps[i - 1].who, '이웃한 단계는 역할이 다르다');
+      assert.ok(!steps.some((x) => /CCTV/.test(x.step)), 'CCTV 제출은 확인 단계가 아니다');
+    }
   });
 });

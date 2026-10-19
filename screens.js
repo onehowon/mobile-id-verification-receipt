@@ -80,10 +80,10 @@ function result(ok, { label, title, sub, compact = false }) {
     <p class="result-title">${esc(title)}</p>${sub ? `<p class="result-sub">${esc(sub)}</p>` : ''}</div>`;
 }
 
-function idCard(person, { birth, edited, top = '모바일 신분증 · 가상' } = {}) {
+function idCard(person, { birth, edited, field = '생년월일', top = '모바일 신분증 · 가상' } = {}) {
   return `<div class="idcard"><div class="idcard-top"><span>${esc(top)}</span><ion-badge class="soft">데모</ion-badge></div>
     <div class="idcard-body"><div class="idcard-photo">${PERSON}</div><div><p class="idcard-name">${esc(person.name)}</p>
-    <dl><dt>생년월일</dt><dd${edited ? ' class="edited"' : ''}>${esc(birth || birthDot(person.birthdate))}</dd><dt>발급</dt><dd>가상 발급기관</dd></dl></div></div></div>`;
+    <dl><dt>${esc(field)}</dt><dd${edited ? ' class="edited"' : ''}>${esc(birth || birthDot(person.birthdate))}</dd><dt>발급</dt><dd>가상 발급기관</dd></dl></div></div></div>`;
 }
 
 const waiting = (t) => `<div class="waiting"><ion-spinner name="lines-small"></ion-spinner><span>${esc(t)}</span></div>`;
@@ -195,8 +195,8 @@ function attackLeft(kind, prep) {
   if (kind === 'birth') {
     return page({
       title: '내 신분증', app: WALLET,
-      body: `<span class="tagline">캡처 화면 · 생년월일을 고침</span>${idCard(P.minor, { birth: '2000.01.01', edited: true })}
-        <p class="idcard-note">원래 생년월일은 ${esc(birthDot(P.minor.birthdate))}이에요.</p><div class="qr-card">${qr(prep.vp, 'small')}</div>`,
+      body: `<span class="tagline">고친 제시물 · 「청소년 아님」 값을 바꿈</span>${idCard(P.minor, { field: '청소년 아님', birth: '예', edited: true })}
+        <p class="idcard-note">발급기관이 서명한 원래 값은 「아니오」예요.</p><div class="qr-card">${qr(prep.vp, 'small')}</div>`,
     });
   }
   if (kind === 'forge') {

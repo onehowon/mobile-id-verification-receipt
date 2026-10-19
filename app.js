@@ -5,7 +5,7 @@ import { CHECKS, CLAIM_LABELS, parseSdJwt, decodeDisclosure } from './lib/sdjwt.
 import { RETENTION_DAYS } from './lib/receipt.js';
 import { RECEIPT_CHECKS, RECEIPT_FIELDS } from './lib/receipt2.js';
 import { jsonFromB64u } from './lib/jose.js';
-import { STEPS_ASIS, STEPS_TOBE, toCsv, summarize } from './lib/measure.js';
+import { STEPS_ASIS, STEPS_TOBE, stepReduction, toCsv, summarize } from './lib/measure.js';
 import { SCENES, BEAT_COUNT, nextPos, prevPos, beatIndex, posFromQuery, formatKst, formatMs, ellipsis } from './lib/scenes.js';
 import * as flow from './lib/demo-flow.js';
 import { sceneView, esc, ymd, auditAt, sealedAt } from './screens.js';
@@ -17,7 +17,7 @@ const DAY = flow.DAY_MS;
 const NONCE_SAFE_MS = 90000; // 요청 유효 120초보다 먼저 새로 만든다 (발표 중 멈춰 있어도 실패하지 않게)
 const ATTACK_BEAT = { birth: 1, forge: 2, replay: 3 };
 const SCAN_DELAY_MS = 2200; // 카메라를 비추고 인식하기까지(연출). 인식 자체는 그 순간 실제로 디코드한다
-const ATTACK_LABEL = { birth: '생년 변조', forge: '서명 위조', replay: '재사용' };
+const ATTACK_LABEL = { birth: '연령 값 변조', forge: '서명 위조', replay: '재사용' };
 
 const st = { pos: { s: 0, b: 0 }, side: 'right', playing: false, timer: 0, raf: 0, started: 0, remaining: 0, beatMs: 0, token: 0, drawer: false };
 let D = null;
@@ -105,16 +105,16 @@ function compareHtml() {
   return `<div class="cmp" role="table" aria-label="지금과 바뀐 뒤">
     <div class="cmp-h" role="columnheader"></div><div class="cmp-h" role="columnheader">지금</div><div class="cmp-h is-new" role="columnheader">바뀐 뒤</div>
     <div class="cmp-row" role="rowheader">확인 단계</div>
-    <div><p class="cmp-big">${STEPS_ASIS.length}단계</p><ol class="cmp-steps">${STEPS_ASIS.map((x) => `<li>${esc(x.step)}</li>`).join('')}</ol></div>
-    <div class="cmp-new"><p class="cmp-big">${STEPS_TOBE.length}단계</p><ol class="cmp-steps">${STEPS_TOBE.map((x) => `<li>${esc(x.step)}</li>`).join('')}</ol></div>
+    <div><p class="cmp-big">${STEPS_ASIS.length}단계</p><p class="cmp-sub cmp-def">붙임1 QR 제시 절차</p><ol class="cmp-steps">${STEPS_ASIS.map((x) => `<li>(${esc(x.who)}) ${esc(x.step)}</li>`).join('')}</ol></div>
+    <div class="cmp-new"><p class="cmp-big">${STEPS_TOBE.length}단계 <span class="cmp-delta">−${stepReduction()}%</span></p><p class="cmp-sub cmp-def">역할이 바뀌기 전까지의 조작 묶음 = 1단계</p><ol class="cmp-steps">${STEPS_TOBE.map((x) => `<li>(${esc(x.who)}) ${esc(x.step)}</li>`).join('')}</ol></div>
     <div class="cmp-row" role="rowheader">검증 시간</div>
     <div><p class="cmp-big">잴 수 없어요</p><p class="cmp-sub">직원이 화면을 눈으로 보고 판단해요.</p></div>
     <div class="cmp-new"><p class="cmp-big">${esc(formatMs(tot ? tot.median : B.median))}</p><p class="cmp-sub">중앙값 · p95 ${esc(formatMs(tot ? tot.p95 : B.p95))} · 이 기기에서 ${tot ? tot.n : B.n}회 실제 측정 (서명 검증 + 영수증 서명)</p></div>
     <div class="cmp-row" role="rowheader">위조 앱</div>
     <div><p class="cmp-big">눈으로는 구별 어려움</p><p class="cmp-sub">성인 여부만 보여 주는 화면도 위조 앱과 구별이 어려워요.</p></div>
     <div class="cmp-new"><p class="cmp-big">통과 못 함</p><p class="cmp-sub">발급기관 서명을 검사해요(장면 ②).</p></div>
-    <div class="cmp-row" role="rowheader">판매 시점 입증</div>
-    <div><p class="cmp-big">기록이 남지 않음</p><p class="cmp-sub">CCTV 영상을 찾아 내야 해요.</p></div>
+    <div class="cmp-row" role="rowheader">분쟁 때 입증</div>
+    <div><p class="cmp-big">기록이 남지 않음</p><p class="cmp-sub">CCTV 영상을 찾아 제출해야 해요.</p></div>
     <div class="cmp-new"><p class="cmp-big">판매 1건의 영수증</p><p class="cmp-sub">손님·발급기관·매장 서명, 업주 혼자 못 만듦 · 개인정보 없음 · ${RETENTION_DAYS}일 보관</p></div>
   </div>
   <div class="cmp-actions"><p class="scr-caption">QR 인식과 사람이 보는 시간은 빼고, 검증기 계산 시간만 쟀어요.</p>
@@ -145,7 +145,7 @@ function vpSections(vp) {
   const kb = kbJwt ? decodeJws(kbJwt).payload : null;
   return sec('제시물 원문 (앞부분)', code(ellipsis(vp, 120, 40)) + `<p class="d-note">전체 ${vp.length}자 · 발급기관 JWT ~ 공개 항목 ~ 기기 서명(KB-JWT)</p>`)
     + sec('공개된 항목', disclosures.length ? kv(disclosures.map((d) => { const x = decodeDisclosure(d); return [CLAIM_LABELS[x.name] || x.name, `${JSON.stringify(x.value)}  (salt ${ellipsis(x.salt, 6, 4)})`]; })) : '<p class="d-note">없음</p>')
-    + sec('발급기관 서명 본문', kv([['iss', iss.payload.iss], ['kid', iss.header.kid], ['vct', iss.payload.vct], ['_sd 해시', `${iss.payload._sd.length}개`], ['cnf (홀더 키)', `x=${ellipsis(iss.payload.cnf.jwk.x, 8, 4)}${iss.payload.vct === 'urn:kr:mid:age' ? ' · 이 증명에만 쓰는 1회용 키' : ''}`], ['iat', `${formatKst(iss.payload.iat * 1000)}${iss.payload.vct === 'urn:kr:mid:age' ? ' (하루 단위로 내림)' : ''}`], ['유효기간', ymd(iss.payload.exp * 1000)]]))
+    + sec('발급기관 서명 본문', kv([['iss', iss.payload.iss], ['kid', iss.header.kid], ['vct', iss.payload.vct], ['_sd 해시', `${iss.payload._sd.length}개`], ['cnf (홀더 키)', `x=${ellipsis(iss.payload.cnf.jwk.x, 8, 4)}${iss.payload.vct === 'urn:kr:mid:age' ? ' · 이 증명에만 쓰는 1회용 키' : ''}`], ['iat', `${formatKst(iss.payload.iat * 1000)}${iss.payload.vct === 'urn:kr:mid:age' ? ' (발급 주의 월요일 0시 · 그 주 발급자 모두 같은 값)' : ''}`], ['유효기간', `${ymd(iss.payload.exp * 1000)}${iss.payload.vct === 'urn:kr:mid:age' ? ' (공통 경계)' : ''}`]]))
     + (kb ? sec('손님 서명 (KB-JWT)', kv([['aud', kb.aud], ['nonce', kb.nonce], ['sd_hash', kb.sd_hash], ['transaction_data_hashes', (kb.transaction_data_hashes || []).join(', ') || '-'], ['iat', formatKst(kb.iat * 1000)]])) : '');
 }
 function timingRows(t) {
@@ -164,7 +164,7 @@ function receiptSections(jws, anchor) {
     + sec('영수증 헤더', kv([['typ', d.header.typ], ['alg', d.header.alg], ['매장 인증서', `${cert.name} (${cert.sub}) · 등록기관 서명`]]))
     + sec('영수증 본문 (전체 필드)', kv(Object.entries(d.payload).map(([k, v]) => [`${k} · ${RECEIPT_FIELDS[k] || ''}`, show(k, v)])))
     + sec('판매 거래 데이터 (td)', code(jsonFromB64u(d.payload.td)) + '<p class="d-note">pos_tx_hash = SHA-256(거래번호 | 매장 비밀 salt). 손님 서명의 transaction_data_hashes에 이 문자열의 해시가 들어 있어요.</p>')
-    + (a ? sec('공통기반 원장 확인', kv([['rh (영수증 해시)', a.rh], ['매장', a.store], ['시각', formatKst(a.t * 1000)]]) + '<p class="d-note">원장에는 영수증 해시·매장·시각·결과만 기록돼요. 손님 정보는 없어요.</p>') : '');
+    + (a ? sec('공통기반 원장 확인', kv([['rh (영수증 해시)', a.rh], ['sp (매장 가명)', a.sp], ['시각', formatKst(a.t * 1000)]]) + '<p class="d-note">원장에는 영수증 해시·증명 해시(발급기관 서명값의 해시)·매장 가명·시각·결과만 기록돼요. 손님 정보와 실제 매장 ID는 없어요. 단속 때 증명 해시를 대조해, 다른 매장에서 같은 1회용 증명을 다시 쓴 영수증을 거부해요.</p>') : '');
 }
 
 function scanDrawer() {
@@ -218,7 +218,9 @@ function drawerHtml() {
   if (id === 'audit') {
     if (b === 3 && D.owner) {
       const O = D.owner;
-      return sec('업주가 만든 영수증 ① 가짜 증명', checks(O.fakeIssuer.report, RECEIPT_CHECKS) + `<p class="d-note">${esc(O.fakeIssuer.report.reason || '')}</p>`)
+      const real = D.audit ? `${D.audit.report.checks.filter((c) => c.ok).length}/${Object.keys(RECEIPT_CHECKS).length}단계 통과` : '아직 검사 전';
+      return sec('비교: 신고된 판매의 진짜 영수증', kv([['재검증', real], ['판매 번호', D.adult.posTxId]]))
+        + sec('업주가 만든 영수증 ① 가짜 증명', checks(O.fakeIssuer.report, RECEIPT_CHECKS) + `<p class="d-note">${esc(O.fakeIssuer.report.reason || '')}</p>`)
         + sec('업주가 고친 영수증 ② N→Y 재서명', checks(O.flip.report, RECEIPT_CHECKS) + `<p class="d-note">${esc(O.flip.report.reason || '')}</p>`)
         + sec('공격 조건', '<p class="d-note">업주는 매장 키를 갖고 있고 원장에도 올렸다고 가정해요. 손님 지갑 키와 발급기관 키만 없어요.</p>');
     }
