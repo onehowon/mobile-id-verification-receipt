@@ -11,21 +11,24 @@ describe('QR 촬영 단계', () => {
   let ctx, req;
   before(async () => {
     ctx = await setupDemo({ now: NOW });
-    req = newRequest(ctx, { now: NOW });
+    req = await newRequest(ctx, { now: NOW });
   });
 
-  test('장면 ①은 [성인 확인] → QR 촬영 → 동의 → 결과, 전체 15조각', () => {
+  test('장면 ①은 [연령 확인] → QR 촬영 → 동의 → 결과, 전체 16조각', () => {
     const adult = SCENES[0];
     assert.equal(adult.beats.length, 4);
     assert.equal(adult.beats.findIndex((b) => b.scan), 1);
     assert.equal(adult.beats[1].focus, 'left');
     assert.equal(SCENES.flatMap((s) => s.beats).filter((b) => b.scan).length, 1);
-    assert.equal(BEAT_COUNT, 15);
+    assert.equal(BEAT_COUNT, 16);
   });
 
-  test('요청에는 1회용 번호와 유효시간(120초)이 들어 있다', () => {
+  test('요청에는 1회용 번호·유효시간(120초)·판매 거래 데이터가 들어 있고 거래번호 평문은 없다', () => {
     assert.equal(typeof req.nonce, 'string');
     assert.equal(req.exp, Math.floor(NOW / 1000) + 120);
+    assert.deepEqual(req.claims, ['not_youth']);
+    assert.equal(req.transaction_data.length, 1);
+    assert.ok(!JSON.stringify(req).includes(ctx.sales[req.nonce]), '거래번호는 해시로만');
   });
 
   test('매장이 띄운 요청을 그대로 읽으면 일치', () => {
@@ -34,12 +37,13 @@ describe('QR 촬영 단계', () => {
     assert.deepEqual(r.req, req);
   });
 
-  test('다른 1회용 번호·다른 매장·다른 항목·시간 지남·형식 불량은 넘어가지 않는다', () => {
-    const other = newRequest(ctx, { now: NOW });
+  test('다른 1회용 번호·다른 매장·다른 항목·다른 거래·시간 지남·형식 불량은 넘어가지 않는다', async () => {
+    const other = await newRequest(ctx, { now: NOW });
     const cases = [
       [JSON.stringify(other), '1회용 번호'],
       [JSON.stringify({ ...req, aud: 'STORE-OTHER' }), '다른 매장'],
-      [JSON.stringify({ ...req, claims: ['age_over_19', 'name'] }), '확인 항목'],
+      [JSON.stringify({ ...req, claims: ['not_youth', 'name'] }), '확인 항목'],
+      [JSON.stringify({ ...req, transaction_data: other.transaction_data }), '요청 내용'],
       [JSON.stringify({ ...req, purpose: '다른 목적' }), '요청 내용'],
       ['not json', '형식'],
       [JSON.stringify({ hello: 1 }), '형식'],

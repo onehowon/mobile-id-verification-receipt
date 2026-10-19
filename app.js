@@ -2,13 +2,15 @@
 import { decodeJws } from './lib/jose.js';
 import { ISSUER } from './lib/demo-keys.js';
 import { CHECKS, CLAIM_LABELS, parseSdJwt, decodeDisclosure } from './lib/sdjwt.js';
-import { RECEIPT_CHECKS, RECEIPT_FIELDS, RETENTION_DAYS } from './lib/receipt.js';
+import { RETENTION_DAYS } from './lib/receipt.js';
+import { RECEIPT_CHECKS, RECEIPT_FIELDS } from './lib/receipt2.js';
+import { jsonFromB64u } from './lib/jose.js';
 import { STEPS_ASIS, STEPS_TOBE, toCsv, summarize } from './lib/measure.js';
 import { SCENES, BEAT_COUNT, nextPos, prevPos, beatIndex, posFromQuery, formatKst, formatMs, ellipsis } from './lib/scenes.js';
 import * as flow from './lib/demo-flow.js';
 import { sceneView, esc, ymd, auditAt, sealedAt } from './screens.js';
 import { matchScannedRequest } from './lib/scan.js';
-import { renderCameraFrame, decodeFrame, FRAME_W, FRAME_H, DECODER } from './camera.js';
+import { renderCameraFrame, decodeFrame, FRAME_W, FRAME_H, DECODER, SCAN_FRAMES } from './camera.js';
 
 const $ = (id) => document.getElementById(id);
 const DAY = flow.DAY_MS;
@@ -25,9 +27,10 @@ async function reset() {
   D = { ctx: await flow.setupDemo(), atk: {} };
 }
 
-function ensureReq1() {
+async function ensureReq1() {
   if (!D.req1 || Date.now() - D.req1At > NONCE_SAFE_MS) {
-    D.req1 = flow.newRequest(D.ctx);
+    D.req1 = await flow.newRequest(D.ctx);
+    D.req1Pos = D.ctx.sales[D.req1.nonce];
     D.req1At = Date.now();
   }
   if (D.scanFrame?.nonce !== D.req1.nonce) {
@@ -37,20 +40,29 @@ function ensureReq1() {
   }
 }
 /** 손님 앱이 사진에서 QR을 실제로 읽고, 읽은 요청이 매장이 띄운 요청(nonce 포함)과 같은지 확인 */
-function scanNow() {
-  ensureReq1();
+async function scanNow() {
+  await ensureReq1();
   if (D.scan?.nonce === D.req1.nonce) return D.scan;
-  const r = decodeFrame(D.scanFrame.canvas);
-  D.scan = { nonce: D.req1.nonce, text: r.text, ms: r.ms, version: r.version, ...matchScannedRequest(r.text, D.req1) };
+  const text = JSON.stringify(D.req1);
+  let r = decodeFrame(D.scanFrame.canvas);
+  let frames = 1;
+  // 첫 프레임을 못 읽으면 손이 조금 움직인 다음 프레임을 읽는다. 화면에도 읽은 그 프레임을 보여 준다
+  for (let f = 1; !r.text && D.scanFrame.canvas && f < SCAN_FRAMES; f++) {
+    const canvas = renderCameraFrame(text, f);
+    r = decodeFrame(canvas);
+    frames++;
+    if (r.text) D.scanFrame = { nonce: D.req1.nonce, canvas, url: canvas.toDataURL('image/jpeg', 0.86) };
+  }
+  D.scan = { nonce: D.req1.nonce, text: r.text, ms: r.ms, version: r.version, frames, ...matchScannedRequest(r.text, D.req1) };
   return D.scan;
 }
-function ensureScanned() {
-  const r = scanNow();
+async function ensureScanned() {
+  const r = await scanNow();
   if (!r.ok) throw new Error(`손님 앱이 QR을 인식하지 못했어요 (${r.reason})`);
 }
 async function ensureAdult() {
   if (D.adult) return;
-  ensureScanned();
+  await ensureScanned();
   // 손님 앱은 QR에서 읽은 요청에 답한다
   D.adult = await flow.runAdultCheck(D.ctx, { request: D.scan.req });
 }
@@ -66,15 +78,16 @@ async function ensureAttack(kind, verify) {
 async function prepare({ s, b }) {
   const id = SCENES[s].id;
   if (id === 'adult') {
-    if (b >= 1) ensureReq1();
-    if (b >= 2) ensureScanned();
+    if (b >= 1) await ensureReq1();
+    if (b >= 2) await ensureScanned();
     if (b >= 3) await ensureAdult();
   } else if (id === 'forgery') {
     const kind = SCENES[s].beats[b].attack || 'birth';
     await ensureAttack(kind, b > 0);
   } else if (id === 'audit') {
     await ensureAdult();
-    if (b >= 2 && !D.audit) D.audit = await flow.runAudit(D.adult.out.receipt, { issuedAt: D.adult.at });
+    if (b >= 2 && !D.audit) D.audit = await flow.runAudit(D.ctx, D.adult);
+    if (b >= 3 && !D.owner) D.owner = await flow.runOwnerForgery(D.ctx, D.adult);
   } else if (id === 'compare') {
     await ensureAdult();
     if (!D.bench) D.bench = await flow.runBenchmark(D.ctx, 30);
@@ -97,12 +110,12 @@ function compareHtml() {
     <div class="cmp-row" role="rowheader">검증 시간</div>
     <div><p class="cmp-big">잴 수 없어요</p><p class="cmp-sub">직원이 화면을 눈으로 보고 판단해요.</p></div>
     <div class="cmp-new"><p class="cmp-big">${esc(formatMs(tot ? tot.median : B.median))}</p><p class="cmp-sub">중앙값 · p95 ${esc(formatMs(tot ? tot.p95 : B.p95))} · 이 기기에서 ${tot ? tot.n : B.n}회 실제 측정 (서명 검증 + 영수증 서명)</p></div>
-    <div class="cmp-row" role="rowheader">매장이 보는 정보</div>
-    <div><p class="cmp-big">생년월일 전체</p><p class="cmp-sub">이름·사진·주소까지 화면으로 봐요.</p></div>
-    <div class="cmp-new"><p class="cmp-big">예 / 아니오</p><p class="cmp-sub">만 19세 이상인지 하나만 받아요.</p></div>
-    <div class="cmp-row" role="rowheader">분쟁 때 입증</div>
-    <div><p class="cmp-big">CCTV 영상</p><p class="cmp-sub">찾아서 내야 하고, 화면 확인은 인정되지 않을 수 있어요(포항 사례).</p></div>
-    <div class="cmp-new"><p class="cmp-big">영수증 1건</p><p class="cmp-sub">매장 서명 · 개인정보 없음 · ${RETENTION_DAYS}일 보관</p></div>
+    <div class="cmp-row" role="rowheader">위조 앱</div>
+    <div><p class="cmp-big">눈으로는 구별 어려움</p><p class="cmp-sub">성인 여부만 보여 주는 화면도 위조 앱과 구별이 어려워요.</p></div>
+    <div class="cmp-new"><p class="cmp-big">통과 못 함</p><p class="cmp-sub">발급기관 서명을 검사해요(장면 ②).</p></div>
+    <div class="cmp-row" role="rowheader">판매 시점 입증</div>
+    <div><p class="cmp-big">기록이 남지 않음</p><p class="cmp-sub">CCTV 영상을 찾아 내야 해요.</p></div>
+    <div class="cmp-new"><p class="cmp-big">판매 1건의 영수증</p><p class="cmp-sub">손님·발급기관·매장 서명, 업주 혼자 못 만듦 · 개인정보 없음 · ${RETENTION_DAYS}일 보관</p></div>
   </div>
   <div class="cmp-actions"><p class="scr-caption">QR 인식과 사람이 보는 시간은 빼고, 검증기 계산 시간만 쟀어요.</p>
     <button type="button" class="krds-btn medium tertiary" data-act="rebench">다시 측정 (30회)</button>
@@ -123,7 +136,8 @@ function checks(report, labels) {
     return `<li class="${cls}"><span class="m">${m}</span><span>${esc(c ? c.label : labels[id])}${c && c.detail ? `<span class="detail">${esc(c.detail)}</span>` : ''}</span></li>`;
   }).join('')}</ul>`;
 }
-const STORE_CHECKS = Object.fromEntries(['format', 'issuer_sig', 'validity', 'disclosure', 'holder_binding', 'audience', 'nonce', 'freshness', 'claim'].map((k) => [k, CHECKS[k]]));
+const STORE_CHECKS = Object.fromEntries(['format', 'issuer_sig', 'validity', 'disclosure', 'holder_binding', 'audience', 'nonce', 'freshness', 'tx_binding', 'claim'].map((k) => [k, CHECKS[k]]));
+const SEALED_CHECKS = Object.fromEntries(['format', 'issuer_sig', 'validity', 'disclosure', 'holder_binding', 'audience', 'freshness', 'claim'].map((k) => [k, CHECKS[k]]));
 
 function vpSections(vp) {
   const { issuerJwt, disclosures, kbJwt } = parseSdJwt(vp);
@@ -131,18 +145,26 @@ function vpSections(vp) {
   const kb = kbJwt ? decodeJws(kbJwt).payload : null;
   return sec('제시물 원문 (앞부분)', code(ellipsis(vp, 120, 40)) + `<p class="d-note">전체 ${vp.length}자 · 발급기관 JWT ~ 공개 항목 ~ 기기 서명(KB-JWT)</p>`)
     + sec('공개된 항목', disclosures.length ? kv(disclosures.map((d) => { const x = decodeDisclosure(d); return [CLAIM_LABELS[x.name] || x.name, `${JSON.stringify(x.value)}  (salt ${ellipsis(x.salt, 6, 4)})`]; })) : '<p class="d-note">없음</p>')
-    + sec('발급기관 서명 본문', kv([['iss', iss.payload.iss], ['kid', iss.header.kid], ['_sd 해시', `${iss.payload._sd.length}개 (이름·생년월일·연령)`], ['유효기간', ymd(iss.payload.exp * 1000)]]))
-    + (kb ? sec('기기 서명 (KB-JWT)', kv([['aud', kb.aud], ['nonce', kb.nonce], ['sd_hash', kb.sd_hash], ['iat', formatKst(kb.iat * 1000)]])) : '');
+    + sec('발급기관 서명 본문', kv([['iss', iss.payload.iss], ['kid', iss.header.kid], ['vct', iss.payload.vct], ['_sd 해시', `${iss.payload._sd.length}개`], ['cnf (홀더 키)', `x=${ellipsis(iss.payload.cnf.jwk.x, 8, 4)}${iss.payload.vct === 'urn:kr:mid:age' ? ' · 이 증명에만 쓰는 1회용 키' : ''}`], ['iat', `${formatKst(iss.payload.iat * 1000)}${iss.payload.vct === 'urn:kr:mid:age' ? ' (하루 단위로 내림)' : ''}`], ['유효기간', ymd(iss.payload.exp * 1000)]]))
+    + (kb ? sec('손님 서명 (KB-JWT)', kv([['aud', kb.aud], ['nonce', kb.nonce], ['sd_hash', kb.sd_hash], ['transaction_data_hashes', (kb.transaction_data_hashes || []).join(', ') || '-'], ['iat', formatKst(kb.iat * 1000)]])) : '');
 }
 function timingRows(t) {
   return kv([['형식 해석', formatMs(t.parse)], ['발급기관 서명', formatMs(t.issuer_sig)], ['선택공개 해시', formatMs(t.disclosure)], ['기기 서명', formatMs(t.holder_binding)], ['nonce·시각', formatMs(t.nonce)], ['영수증 서명', formatMs(t.receipt)], ['합계', formatMs(t.total)]]);
 }
-function receiptSections(jws) {
+function receiptSections(jws, anchor) {
   const d = decodeJws(jws);
   const cert = decodeJws(d.header.scert).payload;
-  return sec('영수증 JWS (앞부분)', code(ellipsis(jws, 100, 30)))
+  const show = (k, v) => {
+    if (k === 'iat' || k === 'exp') return `${v} (${formatKst(v * 1000)})`;
+    if (k === 'vp') return `${ellipsis(v, 40, 16)} (${v.length}자)`;
+    return String(v);
+  };
+  const a = anchor ? decodeJws(anchor).payload : null;
+  return sec('영수증 JWS (앞부분)', code(ellipsis(jws, 100, 30)) + `<p class="d-note">전체 ${jws.length}자 · 손님 제시물 원문을 담고 매장 키로 서명</p>`)
     + sec('영수증 헤더', kv([['typ', d.header.typ], ['alg', d.header.alg], ['매장 인증서', `${cert.name} (${cert.sub}) · 등록기관 서명`]]))
-    + sec('영수증 본문 (전체 필드)', kv(Object.entries(d.payload).map(([k, v]) => [`${k} · ${RECEIPT_FIELDS[k] || ''}`, (k === 'iat' || k === 'exp') ? `${v} (${formatKst(v * 1000)})` : String(v)])));
+    + sec('영수증 본문 (전체 필드)', kv(Object.entries(d.payload).map(([k, v]) => [`${k} · ${RECEIPT_FIELDS[k] || ''}`, show(k, v)])))
+    + sec('판매 거래 데이터 (td)', code(jsonFromB64u(d.payload.td)) + '<p class="d-note">pos_tx_hash = SHA-256(거래번호 | 매장 비밀 salt). 손님 서명의 transaction_data_hashes에 이 문자열의 해시가 들어 있어요.</p>')
+    + (a ? sec('공통기반 원장 확인', kv([['rh (영수증 해시)', a.rh], ['매장', a.store], ['시각', formatKst(a.t * 1000)]]) + '<p class="d-note">원장에는 영수증 해시·매장·시각·결과만 기록돼요. 손님 정보는 없어요.</p>') : '');
 }
 
 function scanDrawer() {
@@ -158,7 +180,7 @@ function scanDrawer() {
     ['목적', q.purpose],
   ]) : '<p class="d-note">읽은 내용이 없어요</p>')
     + sec('매장 요청과 대조', kv([['nonce', q.nonce === D.req1.nonce ? '일치' : '다름'], ['판정', r.ok ? '일치 · 동의 화면으로' : r.reason]]))
-    + frame([['QR 버전', r.version ? String(r.version) : '-'], ['인식 시간', formatMs(r.ms)]])
+    + frame([['QR 버전', r.version ? String(r.version) : '-'], ['인식 시간', formatMs(r.ms)], ['읽은 프레임', `${r.frames || 1}번째`]])
     + sec('읽은 원문', code(r.text || ''));
 }
 
@@ -170,17 +192,20 @@ function drawerHtml() {
       const cert = decodeJws(D.ctx.store.cert).payload;
       return sec('매장 인증서', kv([['발급', cert.iss], ['매장', `${cert.name} (${cert.sub})`], ['기한', ymd(cert.exp * 1000)]]))
         + sec('신뢰하는 발급기관', kv([['id', ISSUER.id], ['kid', ISSUER.kid]]))
-        + sec('손님 지갑의 항목', kv(Object.entries(D.ctx.adult.claims).map(([k, v]) => [CLAIM_LABELS[k] || k, JSON.stringify(v)])));
+        + sec('손님 지갑', kv([...Object.entries(D.ctx.adult.claims).map(([k, v]) => [`${CLAIM_LABELS[k] || k} (신분증)`, JSON.stringify(v)]), [`${CLAIM_LABELS.not_youth} (1회용 증명 ${D.ctx.adult.wallet.remaining}장)`, JSON.stringify(D.ctx.adult.notYouth)]]))
+        + sec('연 나이 판정', '<p class="d-note">청소년 보호법 제2조 제1호: 올해 − 출생연도 ≥ 19이면 청소년 아님. 발급기관이 판정해 서명하고, 매장은 판정하지 않아요. false 증명은 다음 해 1월 1일 0시에 만료돼요.</p>');
     }
     if (SCENES[s].beats[b].scan) return scanDrawer();
     if (b === 2) {
       return sec('검증 요청 (QR 내용)', code(D.req1))
-        + sec('보낼 항목', kv(Object.keys(D.ctx.adult.claims).map((k) => [CLAIM_LABELS[k] || k, D.req1.claims.includes(k) ? '보냄' : '보내지 않음'])));
+        + sec('거래 데이터 (transaction_data[0])', code(jsonFromB64u(D.req1.transaction_data[0])) + `<p class="d-note">판매 번호 ${esc(D.req1Pos)}는 QR에 넣지 않고 해시만 넣어요.</p>`)
+        + sec('보낼 항목', kv([[CLAIM_LABELS.not_youth, '보냄 (1회용 증명)'], ...Object.keys(D.ctx.adult.claims).map((k) => [CLAIM_LABELS[k] || k, '보내지 않음'])]))
+        + sec('지갑의 연령 증명 묶음', kv([['남은 증명', `${D.ctx.adult.wallet.remaining}장`], ['한 장', '홀더 키·salt가 새것, 한 번만 써요']]));
     }
     const o = D.adult.out;
     return sec('검증 결과', `<p class="d-note">결과 ${o.result} · 버린 항목 ${o.report.discarded.length ? o.report.discarded.join(', ') : '없음'}</p>`)
       + sec('검사 순서', checks(o.report, STORE_CHECKS)) + sec('검증 시간 (이번 1회)', timingRows(o.report.timings))
-      + vpSections(D.adult.vp) + receiptSections(o.receipt);
+      + vpSections(D.adult.vp) + receiptSections(o.receipt, o.anchor);
   }
   if (id === 'forgery') {
     const kind = SCENES[s].beats[b].attack || 'birth';
@@ -191,9 +216,16 @@ function drawerHtml() {
     return head + sec('검사 순서', checks(r, STORE_CHECKS) + `<p class="d-note">실패 이유: ${esc(r.reason)} · 영수증: 만들지 않음</p>`) + vpSections(a.prep.vp);
   }
   if (id === 'audit') {
-    const base = receiptSections(D.adult.out.receipt);
-    if (!D.audit) return sec('검증 시점', kv([['단속 시점', formatKst(D.adult.at + flow.AUDIT_AFTER_DAYS * DAY)]])) + base;
-    return sec('영수증 검사', checks(D.audit.report, RECEIPT_CHECKS)) + sec('검증 시점', kv([['확인 시각', formatKst(D.audit.at)], ['영수증 발급', formatKst(D.adult.at)]])) + base;
+    if (b === 3 && D.owner) {
+      const O = D.owner;
+      return sec('업주가 만든 영수증 ① 가짜 증명', checks(O.fakeIssuer.report, RECEIPT_CHECKS) + `<p class="d-note">${esc(O.fakeIssuer.report.reason || '')}</p>`)
+        + sec('업주가 고친 영수증 ② N→Y 재서명', checks(O.flip.report, RECEIPT_CHECKS) + `<p class="d-note">${esc(O.flip.report.reason || '')}</p>`)
+        + sec('공격 조건', '<p class="d-note">업주는 매장 키를 갖고 있고 원장에도 올렸다고 가정해요. 손님 지갑 키와 발급기관 키만 없어요.</p>');
+    }
+    const base = receiptSections(D.adult.out.receipt, D.adult.out.anchor);
+    const when = kv([['단속 시점', formatKst(auditAt(D))], ['영수증 발급', formatKst(D.adult.at)], ['신고된 판매 번호', D.adult.posTxId]]);
+    if (!D.audit) return sec('검증 시점', when) + base;
+    return sec('영수증 재검증 (15단계, 서버 조회 없음)', checks(D.audit.report, RECEIPT_CHECKS)) + sec('검증 시점', when) + vpSections(decodeJws(D.adult.out.receipt).payload.vp) + base;
   }
   if (id === 'compare') {
     const rows = D.ctx.measures.filter((m) => m.scenario === 'benchmark');
@@ -205,7 +237,7 @@ function drawerHtml() {
   const S = D.sealed;
   const kb = decodeJws(parseSdJwt(S.token).kbJwt).payload;
   return sec('봉인 조건 (기기 서명에 포함)', kv([['aud', kb.aud], ['purpose', kb.purpose], ['exp', formatKst(kb.exp * 1000)], ['jti', kb.jti]]))
-    + sec(b === 2 ? '기한 뒤 검사' : '기한 안 검사', checks(b === 2 ? S.expired : S.valid, { ...STORE_CHECKS, revoked: '철회 여부' }));
+    + sec(b === 2 ? '기한 뒤 검사' : '기한 안 검사', checks(b === 2 ? S.expired : S.valid, { ...SEALED_CHECKS, revoked: '철회 여부' }));
 }
 
 // ---------- 폰 두 대 (각각 iframe 안의 Ionic 앱) ----------
@@ -348,9 +380,10 @@ async function go(pos) {
   if (st.playing) schedule(beat.ms);
   if (beat.scan && D.scan?.nonce !== D.req1.nonce) {
     // 카메라를 잠시 비춘 뒤 그 사진을 실제로 디코드하고, 결과(초록 가이드 + 인식했어요)를 그린다
-    setTimeout(() => {
+    setTimeout(async () => {
       if (tok !== st.token) return;
-      scanNow();
+      await scanNow();
+      if (tok !== st.token) return;
       render();
     }, SCAN_DELAY_MS);
   }

@@ -24,6 +24,7 @@ const SCENES = [
   { name: '2-replay', q: 'scene=2&beat=4' },
   { name: '3-audit-now', q: 'scene=3&beat=1' },
   { name: '3-audit', q: 'scene=3&beat=3', mobile: true },
+  { name: '3-owner', q: 'scene=3&beat=4', mobile: true },
   { name: '4-compare', q: 'scene=4', mobile: true },
   { name: '5-sealed', q: 'scene=5&beat=3', mobile: true },
 ];
@@ -37,6 +38,7 @@ const SHOTS = [
   ...SCENES.flatMap((s) => VIEWPORTS.map((v) => ({ ...s, file: `${s.name}-${v.tag}.png`, vp: v }))),
   ...SCENES.filter((s) => s.mobile).map((s) => ({ ...s, file: `${s.name}-mobile.png`, vp: MOBILE })),
   { file: 'drawer-1440.png', q: 'scene=1&beat=4&drawer=1', vp: VIEWPORTS[0] },
+  { file: 'drawer-audit-1440.png', q: 'scene=3&beat=3&drawer=1', vp: VIEWPORTS[0] },
   { file: 'drawer-scan-1440.png', q: 'scene=1&beat=2&drawer=1', vp: VIEWPORTS[0], wait: 3200, expect: 'ok' },
   { file: '1-result-1920.png', q: 'scene=1&beat=4', vp: { tag: '1920', width: 1920, height: 1080 } },
 ].filter((s) => !ONLY || s.file.includes(ONLY));

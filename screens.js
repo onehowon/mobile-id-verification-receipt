@@ -2,8 +2,8 @@
 // 결과는 iframe(phone.html)으로 보내 그 안에서만 Ionic 스타일이 적용된다.
 import { decodeJws } from './lib/jose.js';
 import { RETENTION_DAYS } from './lib/receipt.js';
-import { DEFAULT_PURPOSE } from './lib/verifier.js';
-import { SCENES, failureCopy, formatKst, ellipsis } from './lib/scenes.js';
+import { PURPOSE_LABELS } from './lib/verifier.js';
+import { SCENES, failureCopy, receiptFailureLine, formatKst, ellipsis } from './lib/scenes.js';
 import * as flow from './lib/demo-flow.js';
 
 export const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -63,8 +63,8 @@ function page({ app, title, sub, body, footer, sheet }) {
 const button = (label, { act = 'next', fill = 'solid', disabled = false } = {}) =>
   `<ion-button expand="block" size="large" fill="${fill}"${act ? ` data-act="${act}"` : ''}${disabled ? ' disabled="true"' : ''}>${esc(label)}</ion-button>`;
 
-const group = (label, items, foot) =>
-  `${label ? `<p class="group-label">${esc(label)}</p>` : ''}<ion-list inset="true">${items.join('')}</ion-list>${foot ? `<p class="group-foot">${esc(foot)}</p>` : ''}`;
+const group = (label, items, foot, cls = '') =>
+  `${label ? `<p class="group-label">${esc(label)}</p>` : ''}<ion-list inset="true"${cls ? ` class="${cls}"` : ''}>${items.join('')}</ion-list>${foot ? `<p class="group-foot">${esc(foot)}</p>` : ''}`;
 
 /** 한 줄 항목: 왼쪽 제목(+보조), 오른쪽 값·배지 */
 function item(main, { sub, note, badge, tone, mark, cls = '' } = {}) {
@@ -74,8 +74,8 @@ function item(main, { sub, note, badge, tone, mark, cls = '' } = {}) {
   return `<ion-item lines="full" class="${cls}"><ion-label>${sub ? `<h3>${esc(main)}</h3><p>${esc(sub)}</p>` : `<h3>${esc(main)}</h3>`}</ion-label>${end}${mark || ''}</ion-item>`;
 }
 
-function result(ok, { label, title, sub }) {
-  return `<div class="result ${ok ? 'is-ok' : 'is-bad'}" role="status">${ok ? ICON_OK : ICON_BAD}
+function result(ok, { label, title, sub, compact = false }) {
+  return `<div class="result ${ok ? 'is-ok' : 'is-bad'}${compact ? ' is-compact' : ''}" role="status">${ok ? ICON_OK : ICON_BAD}
     <ion-badge class="${ok ? 'soft-ok' : 'soft-bad'}">${esc(label)}</ion-badge>
     <p class="result-title">${esc(title)}</p>${sub ? `<p class="result-sub">${esc(sub)}</p>` : ''}</div>`;
 }
@@ -98,7 +98,7 @@ function wire(dir, from, to, main, sub, bad = false) {
 }
 const idle = (t = '아직 주고받은 정보가 없어요') => `<p class="wire-idle">${esc(t)}</p>`;
 
-// ---------- 장면 ① 성인 확인 ----------
+// ---------- 장면 ① 연령 확인 ----------
 const ICON_SCAN_OK = '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="12" fill="currentColor"/><path d="M7 12.5l3.2 3.2L17 9" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 
 /** 카메라 인식 상태: 사진이 없으면 실패, 지금 요청을 읽었으면 그 결과, 아니면 찾는 중 */
@@ -142,16 +142,16 @@ function sceneAdult(D, b) {
       title: '내 신분증', app: WALLET,
       body: `${idCard(P.adult)}${group('제출 내역', [item('아직 제출한 내역이 없어요', {})])}`,
       footer: button('QR 스캔', { fill: 'outline', disabled: b === 2 }),
-      sheet: b === 2 ? `<p class="lead">${esc(STORE)}에<br>'만 19세 이상' 여부만 보내요</p>
-        ${group('보내는 정보', [item('만 19세 이상인지', { sub: '예 / 아니오 하나', mark: CHECK })])}
-        ${group('보내지 않는 정보', [item('이름 · 생년월일 · 주소', { cls: 'give-no' })], `목적: ${DEFAULT_PURPOSE} · 한 번만 쓰는 요청이에요`)}
+      sheet: b === 2 ? `<p class="lead">${esc(STORE)}에<br>'청소년 아님(연 나이 기준)' 여부만 보내요</p>
+        ${group('보내는 정보', [item('청소년이 아닌지', { sub: '예 / 아니오 하나 · 1회용 증명', mark: CHECK })])}
+        ${group('보내지 않는 정보', [item('이름 · 생년월일 · 출생연도', { cls: 'give-no' })], `${PURPOSE_LABELS[D.req1.purpose] || D.req1.purpose} · 이 판매 1건에만 쓰여요`)}
         <div class="sheet-btn">${button('보내기')}</div>` : '',
     });
   } else {
     left = page({
       title: '제출 내역', app: WALLET,
-      body: `${group(ymd(D.adult.at), [item(STORE, { sub: `만 19세 이상 여부 · ${hhmm(D.adult.at)}`, badge: '보냄', tone: 'ok' })])}
-        ${group('보낸 정보', [item('만 19세 이상인지', { note: '예', tone: 'strong' }), item('이름 · 생년월일 · 주소', { note: '안 보냄' })], '매장에는 결과만 남고, 이 기기에는 제출 기록만 남아요.')}`,
+      body: `${group(ymd(D.adult.at), [item(STORE, { sub: `청소년 아님 여부 · ${hhmm(D.adult.at)}`, badge: '보냄', tone: 'ok' })])}
+        ${group('보낸 정보', [item('청소년이 아닌지', { note: '예', tone: 'strong' }), item('이름 · 생년월일', { note: '안 보냄' })], `1회용 증명을 썼어요. 남은 증명 ${D.ctx.adult.wallet.remaining}장.`)}`,
     });
   }
 
@@ -159,10 +159,10 @@ function sceneAdult(D, b) {
     right = page({
       title: '확인 요청', app: VERIFIER, sub: STORE,
       body: `<p class="lead">어떤 확인이 필요하세요?</p>${group('', [
-        item('성인 확인', { sub: '만 19세 이상인지만 받아요', mark: CHECK }),
+        item('연령 확인', { sub: '청소년이 아닌지만 받아요 (연 나이)', mark: CHECK }),
         item('본인 확인', { sub: '이 데모에서는 쓰지 않아요', cls: 'give-no' }),
       ])}`,
-      footer: button('성인 확인'),
+      footer: button('연령 확인'),
     });
     w = idle();
   } else if (b < 3) {
@@ -170,22 +170,22 @@ function sceneAdult(D, b) {
     right = page({
       title: 'QR 보여 주기', app: VERIFIER, sub: STORE,
       body: `<div class="qr-card">${qr(JSON.stringify(D.req1))}${waiting('손님 응답을 기다리고 있어요')}</div>
-        ${group('', [item('확인 항목', { note: '만 19세 이상' }), item('유효 시간', { note: '2분 · 1회용' })])}`,
+        ${group('', [item('확인 항목', { note: '청소년 아님' }), item('판매 번호', { note: D.req1Pos }), item('유효 시간', { note: '2분 · 1회용' })])}`,
     });
     w = b === 1
-      ? wire('left', '매장 폰', '손님 폰', '요청 QR', '만 19세 이상 여부 · 1회용 번호')
+      ? wire('left', '매장 폰', '손님 폰', '요청 QR', '청소년 아님 여부 · 1회용 번호 · 판매 번호 해시')
       : wire('left', '매장 폰', '손님 폰', '요청 QR을 읽었어요', '손님 폰은 아직 아무것도 보내지 않았어요');
   } else {
     const ok = D.adult.out.report.ok && D.adult.out.result === 'Y';
     right = page({
       title: '확인 결과', app: VERIFIER, sub: STORE,
       body: ok
-        ? `${result(true, { label: '확인 완료', title: '만 19세 이상 확인됨', sub: '이름과 생년월일은 받지 않았어요.' })}
-           ${group('', [item('영수증', { badge: '저장됨', tone: 'ok' }), item('개인정보', { note: '없음' }), item('확인 시각', { note: hhmm(D.adult.at) })])}`
+        ? `${result(true, { label: '확인 완료', title: '청소년 아님 확인됨', sub: '이름과 생년월일은 받지 않았어요.', compact: true })}
+           ${group('', [item('영수증', { badge: '저장됨', tone: 'ok' }), item('공통기반 원장', { badge: '기록됨', tone: 'ok' }), item('판매 번호', { note: D.adult.posTxId })], '', 'dense')}`
         : result(false, { label: '확인 실패', ...failureCopy(D.adult.out.report) }),
       footer: button('확인'),
     });
-    w = wire('right', '손님 폰', '매장 폰', '만 19세 이상 = 예', '이름·생년월일은 보내지 않았어요');
+    w = wire('right', '손님 폰', '매장 폰', '청소년 아님 = 예', '1회용 증명 + 손님 서명(이 매장·이 판매) · 이름·생년월일 없음');
   }
   return { left, right, wire: w, time: [t, t] };
 }
@@ -233,7 +233,7 @@ function sceneForgery(D, b) {
       footer: button('다시 스캔', { act: '', fill: 'outline' }),
     });
     const note = {
-      birth: ['고친 값: 만 19세 이상 = 예', '발급 당시 해시와 맞지 않아요'],
+      birth: ['고친 값: 청소년 아님 = 예', '발급 당시 해시와 맞지 않아요'],
       forge: ['발급기관 이름은 같아 보여요', '서명한 키가 발급기관 키가 아니에요'],
       replay: ['이미 쓴 요청 번호', `${ellipsis(D.adult.request.nonce, 8, 4)} · 다시 쓸 수 없어요`],
     }[kind];
@@ -243,66 +243,101 @@ function sceneForgery(D, b) {
 }
 
 // ---------- 장면 ③ 3개월 뒤 단속 ----------
-function receiptItems(payload) {
+function receiptItems(payload, posTxId) {
   return [
-    item('결과', { note: payload.result === 'Y' ? '확인됨 (Y)' : '미성년 (N)', tone: 'strong' }),
-    item('확인 항목', { note: '만 19세 이상' }),
-    item('목적', { note: payload.purpose }),
-    item('매장', { note: STORE }),
+    item('결과', { note: payload.result === 'Y' ? '청소년 아님 (Y)' : '청소년 (N)', tone: 'strong' }),
+    item('목적', { note: PURPOSE_LABELS[payload.purpose] || payload.purpose }),
+    item('판매 번호', { note: posTxId }),
     item('확인 시각', { note: formatKst(payload.iat * 1000) }),
+    item('손님 서명', { note: '1회용 증명' }),
     item('파기 예정', { note: ymd(payload.exp * 1000) }),
   ];
 }
 
 export function auditAt(D) { return D.adult.at + flow.AUDIT_AFTER_DAYS * DAY; }
 
+const mark = (ok) => ({ badge: ok ? '맞음' : '아님', tone: ok ? 'ok' : 'bad' });
+
 function sceneAudit(D, b) {
   const rc = decodeJws(D.adult.out.receipt).payload;
+  const pos = D.adult.posTxId;
   const at = auditAt(D);
   const t = hhmm(at);
   const today = `오늘 ${dayLabel(at)}`;
+  const OFFICE = { title: '영수증 확인', app: '단속 관리 (데모)', sub: `가상 구청 · ${today}` };
   let left, right, w;
 
   if (b === 0) {
     left = page({
       title: '확인 기록', app: VERIFIER, sub: `${STORE} · ${today}`,
-      body: group(ymd(D.adult.at), [item('만 19세 이상', { sub: `${hhmm(D.adult.at)} · 영수증 있음`, badge: '확인됨', tone: 'ok' })],
-        `영수증은 ${RETENTION_DAYS}일 동안 보관하고 자동으로 지워요.`),
+      body: group(ymd(D.adult.at), [item('청소년 아님', { sub: `${hhmm(D.adult.at)} · ${pos}`, badge: '확인됨', tone: 'ok' })],
+        `판매마다 영수증이 있어요. ${RETENTION_DAYS}일 동안 보관하고 자동으로 지워요.`),
+    });
+  } else if (b < 3) {
+    left = page({
+      title: '영수증', app: VERIFIER, sub: `${STORE} · ${today}`,
+      body: `${group('이 영수증을 제출해요', receiptItems(rc, pos), '이름·생년월일·사진은 들어 있지 않아요.')}`,
+      footer: b === 1 ? button('구청에 제출') : button('제출했어요', { act: '', fill: 'outline', disabled: true }),
     });
   } else {
     left = page({
-      title: '영수증', app: VERIFIER, sub: `${STORE} · ${today}`,
-      body: `${group('이 영수증을 제출해요', receiptItems(rc), '이름·생년월일·사진은 들어 있지 않아요.')}`,
-      footer: b === 1 ? button('구청에 제출') : button('제출했어요', { act: '', fill: 'outline', disabled: true }),
+      title: '영수증 만들기', app: '업주가 고친 앱', sub: `${STORE} · 매장 키 사용`,
+      body: `<span class="tagline">업주가 직접 만든 가짜 영수증</span>${group('', [
+        item('직접 만든 영수증', { sub: `${pos} · 결과 Y · 매장 키로 서명` }),
+        item('고친 영수증', { sub: `${D.owner.flip.posTxId} · N을 Y로 고쳐 다시 서명` }),
+      ], '원장에도 올렸어요. 매장 서명은 진짜예요.')}`,
+      footer: button('구청에 제출', { act: '', fill: 'outline', disabled: true }),
     });
   }
 
   if (b < 2) {
     right = page({
-      title: '영수증 확인', app: '단속 관리 (데모)', sub: `가상 구청 · ${today}`,
-      body: `${group('신고 내용', [item('일자', { note: ymd(D.adult.at) }), item('내용', { note: '미성년자 주류 판매 의심' }), item('매장', { note: STORE })])}
+      ...OFFICE,
+      body: `${group('신고 내용', [item('일자', { note: ymd(D.adult.at) }), item('판매 번호', { note: pos }), item('내용', { note: '미성년자 주류 판매 의심' })])}
         <div class="qr-card">${waiting('업주의 영수증을 기다리고 있어요')}</div>`,
     });
-  } else {
-    const ok = D.audit.report.ok;
-    const c = Object.fromEntries(D.audit.report.checks.map((x) => [x.id, x.ok]));
+  } else if (b === 2) {
+    const R = D.audit.report;
+    const c = Object.fromEntries(R.checks.map((x) => [x.id, x.ok]));
+    const all = (...ids) => ids.every((id) => c[id]);
     right = page({
-      title: '영수증 확인', app: '단속 관리 (데모)', sub: `가상 구청 · ${today}`,
-      body: ok
-        ? `${result(true, { label: '확인 완료', title: '성인 확인 사실 확인됨', sub: `${formatKst(D.adult.at)} · ${STORE}` })}
+      ...OFFICE,
+      body: R.ok
+        ? `${result(true, { label: '확인 완료', title: '연령 확인 사실 확인됨', sub: `${formatKst(D.adult.at)} · ${pos}`, compact: true })}
            ${group('', [
-             item('등록된 매장의 서명', { badge: c.store_sig ? '맞음' : '아님', tone: c.store_sig ? 'ok' : 'bad' }),
-             item('개인정보', { note: '없음' }),
-             item('보관 기한', { note: `${ymd(rc.exp * 1000)}까지` }),
-           ])}`
-        : result(false, { label: '확인 실패', title: '영수증을 확인할 수 없어요', sub: D.audit.report.reason }),
+             item('발급기관 서명', mark(all('issuer_sig', 'validity_at'))),
+             item('손님 서명', mark(all('holder_binding', 'result'))),
+             item('이 매장·이 시각·이 거래', mark(all('audience', 'nonce', 'tx_binding', 'time'))),
+             item('매장 서명', mark(all('store_cert', 'store_sig'))),
+             item('원장 기록', { badge: c.anchor ? '있음' : '없음', tone: c.anchor ? 'ok' : 'bad' }),
+             item('개인정보', { note: c.format && c.disclosure ? '없음' : '있음', tone: 'strong' }),
+           ], '', 'dense')}`
+        : result(false, { label: '확인 실패', title: '영수증을 확인할 수 없어요', sub: receiptFailureLine(R) }),
+    });
+  } else {
+    const O = D.owner;
+    const bad = [O.fakeIssuer.report, O.flip.report];
+    const rejected = bad.every((r) => !r.ok);
+    right = page({
+      ...OFFICE,
+      body: `${result(!rejected, rejected
+        ? { label: '확인 실패', title: '업주가 만든 영수증은 통과 못 해요', sub: '손님·발급기관 서명은 업주가 만들 수 없어요.', compact: true }
+        : { label: '확인 완료', title: '가짜 영수증이 통과했어요', sub: '', compact: true })}
+        ${group('', [
+          item('직접 만든 영수증', { sub: receiptFailureLine(O.fakeIssuer.report) || '통과', badge: O.fakeIssuer.report.ok ? '통과' : '거부', tone: O.fakeIssuer.report.ok ? '' : 'bad' }),
+          item('고친 영수증 (N→Y)', { sub: receiptFailureLine(O.flip.report) || '통과', badge: O.flip.report.ok ? '통과' : '거부', tone: O.flip.report.ok ? '' : 'bad' }),
+        ])}`,
     });
   }
 
-  w = b === 0
-    ? `<div class="contrast"><p class="contrast-label">지금은</p><p class="contrast-main">휴대폰 화면 확인은<br>인정되지 않아요</p>
-      <p class="contrast-sub">포항의 한 주점은 신분증을 확인했지만, 구청이 "사진·휴대폰 화면을 통한 확인은 인정하지 않는다"며 영업정지 처분을 내렸어요.</p></div>`
-    : wire('right', '업주 폰', '구청', '영수증 1건', '결과·시각·매장·목적만 있어요');
+  if (b === 0) {
+    w = `<div class="contrast"><p class="contrast-label">지금은</p><p class="contrast-main">직원이 눈으로는 공식 앱과 위조 앱을 구별하기 어렵고, 확인했다는 기록이 남지 않아요</p>
+      <p class="contrast-sub">포항의 한 호프집은 손님 휴대폰에 저장된 신분증 사진만 보고 팔았다가 영업정지를 받았어요. 구청은 실물이나 공인된 인증서·앱이 아닌 사진 확인은 인정하지 않았어요(경북매일, 2024.4.8).</p></div>`;
+  } else if (b < 3) {
+    w = wire('right', '업주 폰', '구청', '영수증 1건', `${pos} · 손님 1회용 서명 + 매장 서명 + 원장 확인`);
+  } else {
+    w = wire('right', '업주 폰', '구청', '가짜 영수증 2건', '매장 서명은 맞지만 발급기관 판정과 손님 서명이 맞지 않아요', true);
+  }
   return { left, right, wire: w, time: [t, t] };
 }
 

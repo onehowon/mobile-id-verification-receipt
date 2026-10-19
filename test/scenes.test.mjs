@@ -2,7 +2,7 @@ import { test, describe, before } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { SCENES, TOTAL_MS, BEAT_COUNT, nextPos, prevPos, beatIndex, posFromQuery, failureCopy, formatKst } from '../lib/scenes.js';
-import { setupDemo, runAdultCheck, runAttack, runAudit, runBenchmark, runSealed, ATTACK_KINDS, PEOPLE } from '../lib/demo-flow.js';
+import { setupDemo, runAdultCheck, runAttack, runAudit, runOwnerForgery, runBenchmark, runSealed, ATTACK_KINDS, PEOPLE } from '../lib/demo-flow.js';
 import { decodeJws } from '../lib/jose.js';
 import { toCsv } from '../lib/measure.js';
 
@@ -46,9 +46,11 @@ describe('장면 흐름 (실제 서명·검증)', () => {
     adult = await runAdultCheck(ctx, { now: NOW });
   });
 
-  test('① 성인 확인: Y + 영수증, 이름·생년월일은 보내지 않음', () => {
+  test('① 연령 확인: Y + 영수증 + 원장 기록, 청소년 아님만 보내고 이름·생년월일은 보내지 않음', () => {
     assert.equal(adult.out.result, 'Y');
-    assert.deepEqual(adult.sent, ['age_over_19']);
+    assert.ok(adult.out.anchor, '공통기반 원장 기록');
+    assert.match(adult.posTxId, /^POS-20261019-\d{4}$/);
+    assert.deepEqual(adult.sent, ['not_youth']);
     assert.deepEqual(adult.withheld.sort(), ['birthdate', 'name']);
     assert.ok(!adult.vp.includes(PEOPLE.adult.name));
     const { payload } = decodeJws(adult.out.receipt);
@@ -69,10 +71,18 @@ describe('장면 흐름 (실제 서명·검증)', () => {
     assert.equal(failureCopy(replay.out.report).head, '이미 사용한 QR이에요');
   });
 
-  test('③ 약 3개월 뒤에도 영수증이 검증된다', async () => {
-    const { report, at } = await runAudit(adult.out.receipt, { issuedAt: NOW });
-    assert.equal(report.ok, true);
+  test('③ 약 3개월 뒤에도 영수증이 15단계 모두 통과한다', async () => {
+    const { report, at } = await runAudit(ctx, adult);
+    assert.equal(report.ok, true, report.reason);
+    assert.equal(report.checks.length, 15);
     assert.ok(at > NOW + 80 * 86400000);
+  });
+
+  test('③ 대비: 업주가 만든 영수증 2종(가짜 증명, N→Y)은 원장에 올려도 거부된다', async () => {
+    const o = await runOwnerForgery(ctx, adult);
+    assert.equal(o.fakeIssuer.report.failed, 'issuer_sig');
+    assert.equal(o.flip.original, 'N');
+    assert.equal(o.flip.report.failed, 'result');
   });
 
   test('④ 측정 30회와 CSV', async () => {

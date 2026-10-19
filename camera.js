@@ -30,8 +30,9 @@ function fill(ctx, pts, color) {
   ctx.fill();
 }
 
-/** 요청 글자로 카메라 사진(canvas)을 만든다. QR 라이브러리가 없으면 null */
-export function renderCameraFrame(text) {
+/** 요청 글자로 카메라 사진(canvas)을 만든다. QR 라이브러리가 없으면 null.
+ *  frame: 연속 촬영의 몇 번째 프레임인지(0부터). 손이 조금씩 움직여 각도·거리가 달라진다 */
+export function renderCameraFrame(text, frame = 0) {
   const q = makeQr(text);
   if (!q) return null;
   const W = FRAME_W, H0 = FRAME_H;
@@ -42,8 +43,8 @@ export function renderCameraFrame(text) {
   ctx.fillRect(0, 0, W, H0);
 
   // QR 네 모서리가 사진에서 놓일 자리: 화면 가운데, 폭의 54%, 위쪽이 살짝 멀고(원근) 시계 반대로 5도 기울어짐
-  const s = W * 0.54, cx = W / 2, cy = H0 / 2;
-  const rot = (-5 * Math.PI) / 180;
+  const s = W * (0.54 + 0.03 * frame), cx = W / 2, cy = H0 / 2;
+  const rot = ((-5 + 2 * frame) * Math.PI) / 180;
   const corners = [[-0.47, -0.5], [0.47, -0.49], [0.52, 0.5], [-0.51, 0.51]].map(([a, b]) => {
     const x = a * s, y = b * s;
     return [cx + x * Math.cos(rot) - y * Math.sin(rot), cy + x * Math.sin(rot) + y * Math.cos(rot)];
@@ -86,10 +87,12 @@ export function renderCameraFrame(text) {
   const out = document.createElement('canvas');
   out.width = W; out.height = H0;
   const o = out.getContext('2d', { willReadFrequently: true });
-  o.filter = 'blur(1.4px)';
+  o.filter = 'blur(1.1px)';
   o.drawImage(raw, 0, 0);
   return out;
 }
+
+export const SCAN_FRAMES = 3; // 한 번에 못 읽으면 다음 프레임을 읽는다 (실제 카메라도 연속 프레임을 읽음)
 
 /** 사진 픽셀에서 QR을 읽는다. 못 읽으면 text가 null */
 export function decodeFrame(canvas) {

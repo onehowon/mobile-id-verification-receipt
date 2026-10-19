@@ -157,6 +157,15 @@ html.frameless .result-title { margin-top: 6px; font-size: 20px; }
 html.frameless .result-sub { font-size: 14px; }
 html.frameless ion-list[inset] { margin-bottom: 14px; }
 html.frameless ion-item { --min-height: 44px; }
+/* 검사 항목이 많은 화면(구청 재검증): 프레임 없는 좁은 화면에서 결과를 한 줄로, 목록을 촘촘하게 */
+html.frameless .result.is-compact { flex-direction: row; flex-wrap: wrap; justify-content: center; align-items: center; gap: 0 8px; padding-bottom: 10px; }
+html.frameless .result.is-compact .result-icon { width: 26px; height: 26px; margin: 0; }
+html.frameless .result.is-compact > ion-badge { display: none; }
+html.frameless .result.is-compact .result-title { margin: 0; font-size: 18px; }
+html.frameless .result.is-compact .result-sub { flex-basis: 100%; margin-top: 2px; }
+html.frameless ion-list.dense ion-item { --min-height: 36px; }
+html.frameless ion-list.dense ion-item ion-label h3 { font-size: 15px !important; }
+html.frameless ion-list.dense ion-item ion-label p { font-size: 13px !important; }
 html.frameless ion-item ion-label h3 { font-size: 16px !important; }
 html.frameless ion-item ion-label p { font-size: 14px !important; }
 html.frameless .idcard { margin-bottom: 14px; padding: 14px 16px; }
