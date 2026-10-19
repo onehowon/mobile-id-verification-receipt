@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="ko" mode="ios">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>폰 화면 (데모)</title>
+<link rel="icon" href="data:,">
+<!-- 폰 안 앱 화면: Ionic Core 8.4.0 (MIT), iOS 모드 고정. 바깥 KRDS 페이지와 스타일이 섞이지 않게 iframe 안에서만 쓴다 -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@ionic/core@8.4.0/css/ionic.bundle.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard-gov-dynamic-subset.min.css">
+<link rel="stylesheet" href="phone.css">
+<script>window.Ionic = { config: { mode: 'ios', animated: true, hardwareBackButton: false, swipeBackEnabled: false } };</script>
+<script type="module" src="https://cdn.jsdelivr.net/npm/@ionic/core@8.4.0/dist/ionic/ionic.esm.js"></script>
+<script type="module" src="phone.js"></script>
+</head>
+<body>
+<div class="status" aria-hidden="true"><span class="status-time" id="time"></span><span class="status-icons"><svg viewBox="0 0 18 12" width="18" height="12"><rect x="0" y="8" width="3" height="4" rx="1"/><rect x="5" y="5.5" width="3" height="6.5" rx="1"/><rect x="10" y="3" width="3" height="9" rx="1"/><rect x="15" y="0" width="3" height="12" rx="1"/></svg><svg viewBox="0 0 27 13" width="27" height="13"><rect x=".5" y=".5" width="23" height="12" rx="3.5" fill="none" stroke="currentColor" opacity=".4"/><rect x="2" y="2" width="18" height="9" rx="2"/><path d="M25 4.5v4c.8-.3 1.5-1.1 1.5-2s-.7-1.7-1.5-2z" opacity=".4"/></svg></span></div>
+<ion-app id="app"></ion-app>
+<div class="home-bar" aria-hidden="true"></div>
+</body>
+</html>

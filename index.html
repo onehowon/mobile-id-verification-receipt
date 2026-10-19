@@ -9,6 +9,8 @@
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/krds-uiux@1.1.0/resources/cdn/krds.min.css">
 <!-- KRDS 기본 서체 Pretendard GOV -->
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard-gov-dynamic-subset.min.css">
+<!-- 폰 프레임: devices.css 0.2.0 (MIT) iPhone 14 Pro -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/devices.css@0.2.0/dist/devices.min.css">
 <link rel="stylesheet" href="app.css">
 <link rel="icon" href="data:,">
 <!-- QR 그리기 (없으면 QR 자리에 안내 문구) -->
@@ -19,7 +21,7 @@
 <div class="shell" id="shell">
   <a class="skip-link" href="#main">본문 바로가기</a>
 
-  <p class="demo-band" role="note"><strong>데모</strong> 가상 데이터로 만든 시연 화면이에요. 실제 정부 서비스가 아니에요.<span class="band-more"> 모든 인물·기관·키는 가상이에요.</span></p>
+  <p class="demo-band" role="note"><strong>데모</strong>가상 데이터로 만든 시연 화면이에요. 실제 정부 서비스가 아니에요.<span class="band-more"> 모든 인물·기관·키는 가상이에요.</span></p>
 
   <header class="topbar">
     <div class="brand">
@@ -34,9 +36,8 @@
 
   <main id="main" class="main" tabindex="-1">
     <section class="narr" aria-label="내레이션">
-      <p class="narr-meta" id="narrMeta"></p>
+      <div class="narr-head"><p class="narr-meta" id="narrMeta"></p><div class="narr-tools" id="narrTools"></div></div>
       <p class="narr-text" id="narrText" aria-live="polite"></p>
-      <div class="narr-tools" id="narrTools"></div>
     </section>
 
     <div class="phone-switch" id="phoneSwitch" role="tablist" aria-label="보고 있는 폰">
@@ -45,14 +46,30 @@
     </div>
 
     <section class="stage" id="stage" aria-label="시연 화면">
-      <figure class="device" id="deviceLeft" data-side="left">
+      <figure class="device-slot" id="deviceLeft" data-side="left">
         <figcaption class="device-label" id="labelLeft"></figcaption>
-        <div class="phone"><div class="screen" id="screenLeft"></div></div>
+        <div class="phone-box">
+          <div class="phone-scale">
+            <div class="device device-iphone-14-pro device-black">
+              <div class="device-frame"><iframe class="device-screen" id="screenLeft" src="phone.html?role=customer" title="왼쪽 폰 화면"></iframe></div>
+              <div class="device-stripe"></div><div class="device-header"></div><div class="device-sensors"></div>
+              <div class="device-btns"></div><div class="device-power"></div><div class="device-home"></div>
+            </div>
+          </div>
+        </div>
       </figure>
       <div class="wire" id="wire" aria-live="polite"></div>
-      <figure class="device" id="deviceRight" data-side="right">
+      <figure class="device-slot" id="deviceRight" data-side="right">
         <figcaption class="device-label" id="labelRight"></figcaption>
-        <div class="phone"><div class="screen" id="screenRight"></div></div>
+        <div class="phone-box">
+          <div class="phone-scale">
+            <div class="device device-iphone-14-pro device-black">
+              <div class="device-frame"><iframe class="device-screen" id="screenRight" src="phone.html?role=store" title="오른쪽 폰 화면"></iframe></div>
+              <div class="device-stripe"></div><div class="device-header"></div><div class="device-sensors"></div>
+              <div class="device-btns"></div><div class="device-power"></div><div class="device-home"></div>
+            </div>
+          </div>
+        </div>
       </figure>
     </section>
 

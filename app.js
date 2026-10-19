@@ -4,12 +4,11 @@ import { ISSUER } from './lib/demo-keys.js';
 import { CHECKS, CLAIM_LABELS, parseSdJwt, decodeDisclosure } from './lib/sdjwt.js';
 import { RECEIPT_CHECKS, RECEIPT_FIELDS, RETENTION_DAYS } from './lib/receipt.js';
 import { STEPS_ASIS, STEPS_TOBE, toCsv, summarize } from './lib/measure.js';
-import { DEFAULT_PURPOSE } from './lib/verifier.js';
-import { SCENES, BEAT_COUNT, nextPos, prevPos, beatIndex, posFromQuery, failureCopy, formatKst, formatMs, ellipsis } from './lib/scenes.js';
+import { SCENES, BEAT_COUNT, nextPos, prevPos, beatIndex, posFromQuery, formatKst, formatMs, ellipsis } from './lib/scenes.js';
 import * as flow from './lib/demo-flow.js';
+import { sceneView, esc, ymd, auditAt, sealedAt } from './screens.js';
 
 const $ = (id) => document.getElementById(id);
-const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const DAY = flow.DAY_MS;
 const NONCE_SAFE_MS = 90000; // 요청 유효 120초보다 먼저 새로 만든다 (발표 중 멈춰 있어도 실패하지 않게)
 const ATTACK_BEAT = { birth: 1, forge: 2, replay: 3 };
@@ -62,276 +61,7 @@ async function prepare({ s, b }) {
   }
 }
 
-// ---------- 작은 조각 ----------
-const ICON_OK = '<svg class="result-icon" viewBox="0 0 64 64" aria-hidden="true"><circle cx="32" cy="32" r="30" fill="currentColor"/><path d="M19 33l9 9 17-19" fill="none" stroke="#fff" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
-const ICON_BAD = '<svg class="result-icon" viewBox="0 0 64 64" aria-hidden="true"><circle cx="32" cy="32" r="30" fill="currentColor"/><path d="M22 22l20 20M42 22L22 42" fill="none" stroke="#fff" stroke-width="5" stroke-linecap="round"/></svg>';
-const hhmm = (ms) => formatKst(ms).slice(11);
-const ymd = (ms) => formatKst(ms, { time: false });
-const birthDot = (s) => s.replaceAll('-', '.');
-
-function qr(text, cls = '') {
-  let inner = '<div class="qr-missing">QR 라이브러리를<br>불러오지 못했어요</div>';
-  if (window.qrcode) {
-    try {
-      const q = window.qrcode(0, 'L');
-      q.addData(text);
-      q.make();
-      inner = q.createSvgTag({ cellSize: 4, margin: 0, scalable: true });
-    } catch { /* 너무 긴 데이터: 안내 문구 유지 */ }
-  }
-  return `<div class="qr ${cls}" role="img" aria-label="QR 코드">${inner}</div>`;
-}
-
-function phone({ app, sub, time, body, cta, sheet, gray, center }) {
-  return `<div class="scr${gray ? ' on-gray' : ''}">
-    <div class="sbar" aria-hidden="true"><span>${esc(time)}</span><span class="sbar-bat"></span></div>
-    <div class="appbar"><p class="appbar-title">${esc(app)}</p>${sub ? `<p class="appbar-sub">${esc(sub)}</p>` : ''}</div>
-    <div class="scr-body${center ? ' center' : ''}">${body}</div>
-    ${cta ? `<div class="scr-cta">${cta}</div>` : ''}
-    ${sheet ? `<div class="dim" aria-hidden="true"></div><div class="sheet" role="dialog" aria-modal="false" aria-label="보낼 정보 확인">${sheet}</div>` : ''}
-  </div>`;
-}
-const btn = (label, { act = 'next', kind = 'primary', disabled = false } = {}) =>
-  `<button type="button" class="krds-btn large ${kind}"${act ? ` data-act="${act}"` : ''}${disabled ? ' disabled' : ''}>${esc(label)}</button>`;
-
-function result(ok, { label, title, sub }) {
-  return `<div class="result ${ok ? 'is-ok' : 'is-bad'}" role="status">${ok ? ICON_OK : ICON_BAD}
-    <p class="result-label">${esc(label)}</p><p class="result-title">${esc(title)}</p>${sub ? `<p class="result-sub">${esc(sub)}</p>` : ''}</div>`;
-}
-
-function idCard(person, { birth, edited, kicker = '모바일 신분증 · 가상' } = {}) {
-  return `<div class="card"><p class="idcard-kicker">${esc(kicker)}</p><p class="idcard-name">${esc(person.name)}</p>
-    <dl class="rows"><div><dt>생년월일</dt><dd${edited ? ' class="edited"' : ''}>${esc(birth || birthDot(person.birthdate))}</dd></div><div><dt>발급</dt><dd>가상 발급기관</dd></div></dl></div>`;
-}
-
-function wire(dir, from, to, main, sub, bad = false) {
-  return `<div class="wire-item" data-dir="${dir}">
-    <p class="wire-dir">${dir === 'left' ? `<span>${esc(to)}</span><span class="wire-arrow"></span><span>${esc(from)}</span>` : `<span>${esc(from)}</span><span class="wire-arrow"></span><span>${esc(to)}</span>`}</p>
-    <div class="wire-box${bad ? ' is-bad' : ''}"><p class="wire-main">${esc(main)}</p>${sub ? `<p class="wire-sub">${esc(sub)}</p>` : ''}</div></div>`;
-}
-const idle = (t = '아직 주고받은 정보가 없어요') => `<p class="wire-idle">${esc(t)}</p>`;
-
-// ---------- 장면별 화면 ----------
-const WALLET = '모바일 신분증 (데모)';
-const VERIFIER = '검증앱 (데모)';
-const P = flow.PEOPLE;
-
-function walletHome(now, history = []) {
-  const list = history.length
-    ? `<ul class="list">${history.map((h) => `<li class="list-item"><div><p class="list-main">${esc(h.to)}</p><p class="list-sub">${esc(h.what)} · ${esc(h.when)}</p></div><span class="list-state is-plain">${esc(h.state)}</span></li>`).join('')}</ul>`
-    : '<p class="empty">아직 제출한 내역이 없어요</p>';
-  return { idCard: idCard(P.adult), list };
-}
-
-function sceneAdult(b) {
-  const now = D.adult?.at || Date.now();
-  const time = hhmm(now);
-  const w = walletHome(now);
-  const store = flow.STORE.name;
-  let left, right, wireHtml;
-
-  if (b < 2) {
-    left = phone({
-      app: WALLET, time, gray: true,
-      body: `${w.idCard}<p class="list-head">제출 내역</p>${w.list}`,
-      cta: btn('QR 스캔', { act: '', kind: 'secondary', disabled: true }),
-      sheet: b === 1 ? `<span class="sheet-grip" aria-hidden="true"></span>
-        <p class="sheet-title">${esc(store)}에 '만 19세 이상' 여부만 보내요</p>
-        <dl class="give"><div><dt>보내요</dt><dd>만 19세 이상인지</dd></div><div class="is-no"><dt>안 보내요</dt><dd>이름 · 생년월일 · 주소</dd></div></dl>
-        <p class="scr-caption">목적: ${esc(DEFAULT_PURPOSE)} · 한 번만 쓰는 요청이에요</p>
-        ${btn('보내기')}` : '',
-    });
-  } else {
-    const h = [{ to: store, what: '만 19세 이상 여부', when: hhmm(D.adult.at), state: '보냄' }];
-    left = phone({
-      app: WALLET, sub: '제출 내역', time, gray: true,
-      body: `<p class="scr-title">${esc(store)}에 보냈어요</p><p class="scr-caption">보낸 정보는 만 19세 이상 여부 하나예요.</p>
-        <p class="list-head">제출 내역 1건</p>${walletHome(now, h).list}`,
-    });
-  }
-
-  if (b === 0) {
-    right = phone({
-      app: VERIFIER, sub: store, time,
-      body: `<p class="scr-title">어떤 확인이<br>필요하세요?</p>
-        <div class="option"><p class="option-title">성인 확인</p><p class="option-sub">만 19세 이상인지만 받아요</p></div>
-        <div class="option is-off"><p class="option-title">본인 확인</p><p class="option-sub">이 데모에서는 쓰지 않아요</p></div>`,
-      cta: btn('성인 확인'),
-    });
-    wireHtml = idle();
-  } else if (b === 1) {
-    right = phone({
-      app: VERIFIER, sub: store, time,
-      body: `<p class="scr-title">손님에게 이 QR을<br>보여 주세요</p>${qr(JSON.stringify(D.req1))}
-        <p class="waiting">손님 응답을 기다리고 있어요</p><p class="scr-caption" style="text-align:center">한 번만 쓸 수 있고 2분 뒤 사라져요</p>`,
-    });
-    wireHtml = wire('left', '매장 폰', '손님 폰', '요청: 만 19세 이상 여부', '1회용 번호가 들어 있어요');
-  } else {
-    const ok = D.adult.out.report.ok && D.adult.out.result === 'Y';
-    right = phone({
-      app: VERIFIER, sub: store, time,
-      body: ok
-        ? `${result(true, { label: '확인 완료', title: '만 19세 이상 확인됨', sub: '이름과 생년월일은 받지 않았어요.' })}
-           <div class="fact"><b>영수증 저장됨</b><span>개인정보 없음</span></div>`
-        : result(false, { label: '확인 실패', ...failureCopy(D.adult.out.report) }),
-      cta: btn('확인', { act: 'next' }),
-    });
-    wireHtml = wire('right', '손님 폰', '매장 폰', '만 19세 이상 = 예', '이름·생년월일은 보내지 않았어요');
-  }
-  return { left, right, wire: wireHtml };
-}
-
-function attackLeft(kind, prep, time) {
-  if (kind === 'birth') {
-    return phone({
-      app: WALLET, time, gray: true,
-      body: `<span class="tag">캡처 화면 · 생년월일을 고침</span>${idCard(P.minor, { birth: '2000.01.01', edited: true })}
-        <p class="anno">원래 생년월일은 ${esc(birthDot(P.minor.birthdate))}이에요.</p>${qr(prep.vp, 'small')}`,
-    });
-  }
-  if (kind === 'forge') {
-    return phone({
-      app: WALLET, time, gray: true,
-      body: `<span class="tag">위조 앱 · 스스로 서명</span>${idCard({ name: '홍길동' }, { birth: '1990.01.01' })}
-        <p class="anno">겉모습은 진짜 앱과 똑같아요.</p>${qr(prep.vp, 'small')}`,
-    });
-  }
-  return phone({
-    app: '사진 앨범', time, gray: true,
-    body: `<span class="tag">다른 사람이 쓴 QR 캡처</span><p class="scr-text">장면 ①에서 이미 확인에 쓴 QR을 저장해 왔어요.</p>${qr(prep.vp, 'small')}`,
-  });
-}
-
-function sceneForgery(b) {
-  const kind = SCENES[1].beats[b].attack || 'birth';
-  const a = D.atk[kind];
-  const time = hhmm(a.at);
-  const left = attackLeft(kind, a.prep, time);
-  let right, wireHtml;
-  if (b === 0) {
-    right = phone({
-      app: VERIFIER, sub: flow.STORE.name, time,
-      body: `<p class="scr-title">손님 화면의 QR을<br>스캔해 주세요</p><div class="finder" aria-hidden="true"></div><p class="waiting">스캔을 기다리고 있어요</p>`,
-    });
-    wireHtml = wire('right', '손님 폰', '매장 폰', '화면에는 2000.01.01', '눈으로는 진짜와 구별하기 어려워요');
-  } else {
-    const r = a.res.out.report;
-    const copy = failureCopy(r) || { head: '확인되지 않았어요', sub: '' };
-    right = phone({
-      app: VERIFIER, sub: flow.STORE.name, time,
-      body: `${result(false, { label: '확인 실패', title: copy.head, sub: copy.sub })}
-        <div class="fact"><b>판매하지 마세요</b><span>영수증 없음</span></div>`,
-    });
-    const note = {
-      birth: ['고친 값: 만 19세 이상 = 예', '발급 당시 해시와 맞지 않아요'],
-      forge: ['발급기관 이름은 같아 보여요', '서명한 키가 발급기관 키가 아니에요'],
-      replay: ['이미 쓴 요청 번호', `${ellipsis(D.adult.request.nonce, 8, 4)} · 다시 쓸 수 없어요`],
-    }[kind];
-    wireHtml = wire('right', '손님 폰', '매장 폰', note[0], note[1], true);
-  }
-  return { left, right, wire: wireHtml };
-}
-
-function receiptRows(payload) {
-  return `<dl class="rows">
-    <div><dt>결과</dt><dd>${payload.result === 'Y' ? '확인됨 (Y)' : '미성년 (N)'}</dd></div>
-    <div><dt>확인 항목</dt><dd>만 19세 이상</dd></div>
-    <div><dt>목적</dt><dd>${esc(payload.purpose)}</dd></div>
-    <div><dt>매장</dt><dd>${esc(flow.STORE.name)}</dd></div>
-    <div><dt>확인 시각</dt><dd>${esc(formatKst(payload.iat * 1000))}</dd></div>
-    <div><dt>파기 예정</dt><dd>${esc(ymd(payload.exp * 1000))}</dd></div></dl>`;
-}
-
-function sceneAudit(b) {
-  const rc = decodeJws(D.adult.out.receipt).payload;
-  const auditAt = D.adult.at + flow.AUDIT_AFTER_DAYS * DAY;
-  const time = hhmm(auditAt);
-  const issued = formatKst(D.adult.at);
-  let left, right, wireHtml;
-
-  if (b === 0) {
-    left = phone({
-      app: VERIFIER, sub: '확인 기록', time, gray: true,
-      body: `<p class="list-head">${esc(ymd(D.adult.at))}</p>
-        <ul class="list"><li class="list-item"><div><p class="list-main">만 19세 이상</p><p class="list-sub">${esc(hhmm(D.adult.at))} · 영수증 있음</p></div><span class="list-state">확인됨</span></li></ul>
-        <p class="scr-caption">영수증은 ${RETENTION_DAYS}일 동안 보관하고 자동으로 지워요.</p>`,
-    });
-  } else {
-    left = phone({
-      app: VERIFIER, sub: '영수증', time,
-      body: `<p class="scr-title">이 영수증을<br>제출할게요</p><div class="card">${receiptRows(rc)}</div>
-        <p class="scr-caption">이름·생년월일·사진은 들어 있지 않아요.</p>`,
-      cta: b === 1 ? btn('구청에 제출') : btn('제출했어요', { act: '', kind: 'secondary', disabled: true }),
-    });
-  }
-
-  if (b < 2) {
-    right = phone({
-      app: '단속 확인 (데모)', sub: '가상 구청', time,
-      body: `<p class="scr-title">업주에게 영수증을<br>요청해 주세요</p>
-        <p class="scr-text">신고 내용: ${esc(ymd(D.adult.at))} 미성년자 주류 판매 의심</p>
-        <p class="waiting">영수증을 기다리고 있어요</p>`,
-    });
-  } else {
-    const ok = D.audit.report.ok;
-    const c = Object.fromEntries(D.audit.report.checks.map((x) => [x.id, x.ok]));
-    right = phone({
-      app: '단속 확인 (데모)', sub: '가상 구청', time,
-      body: ok
-        ? `${result(true, { label: '확인 완료', title: '성인 확인 사실 확인됨', sub: `${issued} · ${flow.STORE.name}` })}
-           <ul class="mini-checks">
-             <li><span>등록된 매장의 서명</span><span class="v">${c.store_sig ? '맞음' : '아님'}</span></li>
-             <li><span>개인정보</span><span class="v">없음</span></li>
-             <li><span>보관 기한</span><span class="v">${esc(ymd(rc.exp * 1000))}까지</span></li></ul>
-           <p class="scr-caption" style="text-align:center">이 영수증에는 개인정보가 없어요.</p>`
-        : result(false, { label: '확인 실패', title: '영수증을 확인할 수 없어요', sub: D.audit.report.reason }),
-    });
-  }
-
-  if (b === 0) {
-    wireHtml = `<div class="contrast"><p class="contrast-label">지금은</p><p class="contrast-main">휴대폰 화면 확인은<br>인정되지 않아요</p>
-      <p class="contrast-sub">포항의 한 주점은 신분증을 확인했지만, 구청이 "사진·휴대폰 화면을 통한 확인은 인정하지 않는다"며 영업정지 처분을 내렸어요.</p></div>`;
-  } else {
-    wireHtml = wire('right', '업주 폰', '구청', '영수증 1건', '결과·시각·매장·목적만 있어요');
-  }
-  return { left, right, wire: wireHtml };
-}
-
-function sceneSealed(b) {
-  const S = D.sealed;
-  const at = [S.at, S.at + DAY, S.expiresAt + DAY][b];
-  const time = hhmm(at);
-  const until = ymd(S.expiresAt);
-  const agency = flow.AGENCY.name;
-  const left = b === 0
-    ? phone({
-      app: WALLET, time, gray: true,
-      body: idCard(P.adult),
-      sheet: `<span class="sheet-grip" aria-hidden="true"></span><p class="sheet-title">${esc(agency)}에 사본을 보내요</p>
-        <dl class="give"><div><dt>보내요</dt><dd>이름 · 생년월일</dd></div><div><dt>쓰는 곳</dt><dd>민원 신청 본인 확인</dd></div><div><dt>기한</dt><dd>${esc(until)}까지</dd></div></dl>
-        <p class="scr-caption">기한이 지나면 사본은 무효가 돼요.</p>${btn('사본 보내기')}`,
-    })
-    : phone({
-      app: WALLET, sub: '제출 내역', time, gray: true,
-      body: `<p class="list-head">제출 내역</p><ul class="list"><li class="list-item"><div><p class="list-main">${esc(agency)}</p><p class="list-sub">${esc(until.slice(5))}까지 · 봉인 사본</p></div><span class="list-state${b === 2 ? ' is-plain' : ''}">${b === 2 ? '만료' : '유효'}</span></li></ul>`,
-    });
-  let right;
-  if (b === 0) {
-    right = phone({ app: '민원 접수 (데모)', sub: agency, time, body: '<p class="scr-title">제출된 사본을<br>기다리고 있어요</p><p class="waiting">대기 중</p>' });
-  } else {
-    const r = b === 1 ? S.valid : S.expired;
-    right = phone({
-      app: '민원 접수 (데모)', sub: agency, time,
-      body: r.ok
-        ? `${result(true, { label: '확인 완료', title: '본인 확인됨', sub: `${P.adult.name} · ${birthDot(P.adult.birthdate)}` })}<div class="fact"><b>유효 기한</b><span>${esc(until)}까지</span></div>`
-        : `${result(false, { label: '무효', title: '기한이 지나 무효예요', sub: `${until}에 만료된 사본이에요.` })}<div class="fact"><b>확인 시점</b><span>${esc(ymd(at))}</span></div>`,
-    });
-  }
-  const wireHtml = b === 0
-    ? idle('받는 곳·목적·기한이 서명에 묶여요')
-    : wire('right', '손님 폰', '기관', `확인 시점 ${ymd(at)}`, b === 1 ? '기한 안이에요' : '기한이 지났어요', b === 2);
-  return { left, right, wire: wireHtml };
-}
+// ---------- 화면 조각은 screens.js (Ionic 마크업) ----------
 
 function compareHtml() {
   const B = D.bench;
@@ -438,13 +168,78 @@ function drawerHtml() {
     + sec(b === 2 ? '기한 뒤 검사' : '기한 안 검사', checks(b === 2 ? S.expired : S.valid, { ...STORE_CHECKS, revoked: '철회 여부' }));
 }
 
-// ---------- 그리기 ----------
-const shown = { left: '', right: '', wire: '' };
-function swap(el, key, html) {
-  if (shown[key] === html) return;
-  shown[key] = html;
-  el.innerHTML = html;
+// ---------- 폰 두 대 (각각 iframe 안의 Ionic 앱) ----------
+// 폰 화면은 phone.html?role=customer|store 에서 그린다. 바깥 KRDS 스타일과 Ionic 전역 스타일이 섞이지 않는다.
+const PHONE_W = 428; // devices.css iPhone 14 Pro 프레임 크기(px)
+const PHONE_H = 868;
+const phones = {
+  left: { frame: () => $('screenLeft'), ready: false, pending: null, acked: 0 },
+  right: { frame: () => $('screenRight'), ready: false, pending: null, acked: 0 },
+};
+let screenSeq = 0;
+const roleSide = { customer: 'left', store: 'right' };
+const isFrameless = () => getComputedStyle($('stage')).getPropertyValue('--frameless').trim() === '1';
+
+function sendScreen(side, html, time) {
+  const p = phones[side];
+  p.pending = { type: 'screen', html, time, frame: !isFrameless(), seq: screenSeq };
+  document.documentElement.dataset.phones = 'pending';
+  if (p.ready) p.frame().contentWindow.postMessage(p.pending, location.origin);
 }
+function checkPhonesDone() {
+  if (phones.left.acked === screenSeq && phones.right.acked === screenSeq) document.documentElement.dataset.phones = 'ok';
+}
+window.addEventListener('message', (e) => {
+  if (e.origin !== location.origin || !e.data || typeof e.data !== 'object') return;
+  const side = roleSide[e.data.role];
+  if (!side || e.source !== phones[side].frame().contentWindow) return;
+  const p = phones[side];
+  if (e.data.type === 'hello') {
+    p.ready = true;
+    if (p.pending) p.frame().contentWindow.postMessage(p.pending, location.origin);
+  } else if (e.data.type === 'rendered') {
+    p.acked = e.data.seq;
+    checkPhonesDone();
+  } else if (e.data.type === 'act') {
+    if (e.data.act === 'next') { stopForManual(); next(); }
+  } else if (e.data.type === 'key') {
+    onKey(e.data.key);
+  }
+});
+
+// 폰이 바깥보다 먼저 준비됐을 수 있으니 이쪽에서도 한 번 묻는다
+for (const p of Object.values(phones)) {
+  const f = p.frame();
+  const ping = () => f.contentWindow?.postMessage({ type: 'ping' }, location.origin);
+  f.addEventListener('load', ping);
+  ping();
+}
+
+/** 무대 높이·폭에 맞춰 폰 프레임 배율을 정한다 (위아래 베젤까지 다 보이게) */
+function fitPhones() {
+  const stage = $('stage');
+  if (stage.hidden) return;
+  if (isFrameless()) { stage.style.removeProperty('--s'); return; }
+  const label = $('labelLeft').getBoundingClientRect().height + 10;
+  const cs = getComputedStyle(stage);
+  const gap = parseFloat(cs.columnGap) || 0;
+  const wireW = $('wire').getBoundingClientRect().width;
+  const h = stage.clientHeight - label;
+  const w = (stage.clientWidth - wireW - gap * 2) / 2;
+  const s = Math.max(0.3, Math.min(1, h / PHONE_H, w / PHONE_W));
+  stage.style.setProperty('--s', s.toFixed(4));
+}
+
+let lastView = null;
+function renderPhones() {
+  if (!lastView) return;
+  screenSeq++;
+  sendScreen('left', lastView.left, lastView.time[0]);
+  sendScreen('right', lastView.right, lastView.time[1]);
+}
+
+// ---------- 그리기 ----------
+let shownWire = '';
 
 function render() {
   const { s, b } = st.pos;
@@ -457,27 +252,27 @@ function render() {
   });
 
   let when = '';
-  if (scene.id === 'audit') when = `${formatKst(D.adult.at + flow.AUDIT_AFTER_DAYS * DAY)} · 약 3개월 뒤`;
-  else if (scene.id === 'sealed' && D.sealed) when = formatKst([D.sealed.at, D.sealed.at + DAY, D.sealed.expiresAt + DAY][b]);
+  if (scene.id === 'audit') when = `${formatKst(auditAt(D))} · 약 3개월 뒤`;
+  else if (scene.id === 'sealed' && D.sealed) when = formatKst(sealedAt(D, b));
   else if (scene.id !== 'compare') when = formatKst(D.adult?.at || Date.now());
-  $('narrMeta').innerHTML = `<b>장면 ${s + 1}</b> · ${esc(scene.title)}${when ? ` · ${esc(when)}` : ''}`;
+  $('narrMeta').innerHTML = `<b>장면 ${s + 1}</b><span>${esc(scene.title)}</span>${when ? `<span>${esc(when)}</span>` : ''}`;
   $('narrText').textContent = beat.narr;
 
   $('narrTools').innerHTML = scene.id === 'forgery'
-    ? `<span class="seg-label" id="segLabel">변조 유형</span><div class="seg" role="group" aria-labelledby="segLabel">${flow.ATTACK_KINDS.map((k) => `<button type="button" data-attack="${k}" aria-pressed="${(beat.attack || 'birth') === k}">${ATTACK_LABEL[k]}</button>`).join('')}</div>`
+    ? `<div class="seg" role="group" aria-label="변조 유형">${flow.ATTACK_KINDS.map((k) => `<button type="button" data-attack="${k}" aria-pressed="${(beat.attack || 'birth') === k}">${ATTACK_LABEL[k]}</button>`).join('')}</div>`
     : '';
 
   const compare = scene.layout === 'compare';
   $('stage').hidden = compare;
   $('phoneSwitch').hidden = compare;
   $('compare').hidden = !compare;
+  $('main').classList.toggle('is-compare', compare);
   if (compare) {
     $('compare').innerHTML = compareHtml();
   } else {
-    const v = { adult: sceneAdult, forgery: sceneForgery, audit: sceneAudit, sealed: sceneSealed }[scene.id](b);
-    swap($('screenLeft'), 'left', v.left);
-    swap($('screenRight'), 'right', v.right);
-    swap($('wire'), 'wire', v.wire);
+    const v = sceneView(D, st.pos);
+    lastView = v;
+    if (v.wire !== shownWire) { shownWire = v.wire; $('wire').innerHTML = v.wire; }
     $('labelLeft').textContent = scene.left;
     $('labelRight').textContent = scene.right;
     $('tabLeft').textContent = scene.left;
@@ -485,6 +280,8 @@ function render() {
     $('stage').dataset.side = st.side;
     $('tabLeft').setAttribute('aria-selected', String(st.side === 'left'));
     $('tabRight').setAttribute('aria-selected', String(st.side === 'right'));
+    fitPhones();
+    renderPhones();
   }
 
   $('counter').textContent = `${beatIndex(st.pos)} / ${BEAT_COUNT}`;
@@ -576,7 +373,7 @@ async function restart(play = false) {
   clearTimeout(st.timer);
   st.token++;
   await reset();
-  for (const k of Object.keys(shown)) shown[k] = '';
+  shownWire = '';
   st.remaining = 0;
   st.playing = play;
   $('btnPlay').setAttribute('aria-pressed', String(play));
@@ -651,10 +448,23 @@ function bind() {
   });
   document.addEventListener('keydown', (e) => {
     if (e.altKey || e.ctrlKey || e.metaKey || (e.target instanceof Element && e.target.closest('input, textarea, select'))) return;
-    if (e.key === 'ArrowRight') { e.preventDefault(); stopForManual(); next(); }
-    else if (e.key === 'ArrowLeft') { e.preventDefault(); stopForManual(); prev(); }
-    else if (e.key === 'Escape' && st.drawer) setDrawer(false);
+    if (onKey(e.key)) e.preventDefault();
   });
+  // 창 크기·서랍 열림에 따라 폰 배율을 다시 계산하고, 프레임 유무가 바뀌면 화면을 다시 보낸다
+  let wasFrameless = null;
+  new ResizeObserver(() => {
+    const fl = isFrameless();
+    fitPhones();
+    if (wasFrameless !== null && fl !== wasFrameless) renderPhones();
+    wasFrameless = fl;
+  }).observe($('stage'));
+}
+
+function onKey(key) {
+  if (key === 'ArrowRight') { stopForManual(); next(); return true; }
+  if (key === 'ArrowLeft') { stopForManual(); prev(); return true; }
+  if (key === 'Escape' && st.drawer) { setDrawer(false); return true; }
+  return false;
 }
 
 async function main() {
@@ -674,6 +484,8 @@ async function main() {
   await go(pos);
   if (q.get('drawer') === '1') setDrawer(true);
   document.documentElement.dataset.ready = '1';
+  // 화면 폭 강제나 서랍처럼 늦게 바뀐 크기도 반영
+  requestAnimationFrame(fitPhones);
 }
 
 main().catch((e) => { console.error(e); $('narrText').textContent = `시작하지 못했어요: ${e.message}`; });
