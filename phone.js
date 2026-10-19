@@ -4,6 +4,7 @@ const role = new URLSearchParams(location.search).get('role') || 'customer';
 document.documentElement.dataset.role = role;
 const app = document.getElementById('app');
 let shownHtml = '';
+let shownLarge = null;
 const parentOrigin = location.origin;
 const post = (msg) => parent.postMessage({ ...msg, role }, parentOrigin);
 
@@ -35,17 +36,21 @@ async function hydrate(root) {
   }
 }
 
-async function show({ html, time, frame, seq }) {
+async function show({ html, time, frame, seq, large }) {
   document.getElementById('time').textContent = time || '';
   document.documentElement.classList.toggle('frameless', !frame);
-  if (html !== shownHtml) {
+  // 큰 글씨 모드: 글자·버튼 크기가 바뀌면 높이 자동 바텀시트도 다시 재야 해서 화면을 새로 그린다
+  const largeChanged = !!large !== shownLarge;
+  document.documentElement.classList.toggle('large', !!large);
+  shownLarge = !!large;
+  if (html !== shownHtml || largeChanged) {
     shownHtml = html;
     const tpl = document.createElement('template');
     tpl.innerHTML = html;
     // 같은 카메라 화면에서 인식 상태만 바뀌면 다시 그리지 않고 상태·안내만 바꾼다 (사진·스캔 라인이 깜박이지 않게)
     const cam = app.querySelector('.cam[data-key]');
     const nextCam = tpl.content.querySelector('.cam[data-key]');
-    if (cam && nextCam && cam.dataset.key === nextCam.dataset.key) {
+    if (!largeChanged && cam && nextCam && cam.dataset.key === nextCam.dataset.key) {
       cam.dataset.state = nextCam.dataset.state;
       cam.querySelector('.cam-status').innerHTML = nextCam.querySelector('.cam-status').innerHTML;
     } else {

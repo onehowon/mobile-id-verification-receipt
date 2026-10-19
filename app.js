@@ -6,7 +6,7 @@ import { RETENTION_DAYS } from './lib/receipt.js';
 import { RECEIPT_CHECKS, RECEIPT_FIELDS } from './lib/receipt2.js';
 import { jsonFromB64u } from './lib/jose.js';
 import { STEPS_ASIS, STEPS_TOBE, stepReduction, toCsv, summarize } from './lib/measure.js';
-import { SCENES, BEAT_COUNT, nextPos, prevPos, beatIndex, posFromQuery, formatKst, formatMs, ellipsis } from './lib/scenes.js';
+import { SCENES, BEAT_COUNT, nextPos, prevPos, beatIndex, posFromQuery, largeFromQuery, narration, formatKst, formatMs, ellipsis } from './lib/scenes.js';
 import * as flow from './lib/demo-flow.js';
 import { sceneView, esc, ymd, auditAt, sealedAt } from './screens.js';
 import { matchScannedRequest } from './lib/scan.js';
@@ -19,7 +19,7 @@ const ATTACK_BEAT = { birth: 1, forge: 2, replay: 3 };
 const SCAN_DELAY_MS = 2200; // 카메라를 비추고 인식하기까지(연출). 인식 자체는 그 순간 실제로 디코드한다
 const ATTACK_LABEL = { birth: '연령 값 변조', forge: '서명 위조', replay: '재사용' };
 
-const st = { pos: { s: 0, b: 0 }, side: 'right', playing: false, timer: 0, raf: 0, started: 0, remaining: 0, beatMs: 0, token: 0, drawer: false };
+const st = { pos: { s: 0, b: 0 }, side: 'right', playing: false, timer: 0, raf: 0, started: 0, remaining: 0, beatMs: 0, token: 0, drawer: false, large: false };
 let D = null;
 
 // ---------- 데이터: 장면에 필요한 만큼만, 실제로 계산 ----------
@@ -256,7 +256,7 @@ const isFrameless = () => getComputedStyle($('stage')).getPropertyValue('--frame
 
 function sendScreen(side, html, time) {
   const p = phones[side];
-  p.pending = { type: 'screen', html, time, frame: !isFrameless(), seq: screenSeq };
+  p.pending = { type: 'screen', html, time, frame: !isFrameless(), large: st.large, seq: screenSeq };
   document.documentElement.dataset.phones = 'pending';
   if (p.ready) p.frame().contentWindow.postMessage(p.pending, location.origin);
 }
@@ -276,6 +276,7 @@ window.addEventListener('message', (e) => {
     checkPhonesDone();
   } else if (e.data.type === 'act') {
     if (e.data.act === 'next') { stopForManual(); next(); }
+    if (e.data.act === 'prev') { stopForManual(); prev(); }
   } else if (e.data.type === 'key') {
     onKey(e.data.key);
   }
@@ -330,7 +331,8 @@ function render() {
   else if (scene.id === 'sealed' && D.sealed) when = formatKst(sealedAt(D, b));
   else if (scene.id !== 'compare') when = formatKst(D.adult?.at || Date.now());
   $('narrMeta').innerHTML = `<b>장면 ${s + 1}</b><span>${esc(scene.title)}</span>${when ? `<span>${esc(when)}</span>` : ''}`;
-  $('narrText').textContent = beat.narr;
+  const n = narration(beat, { large: st.large });
+  $('narrText').innerHTML = `${esc(n.text)}${n.extra ? `<span class="narr-extra"><b>큰 글씨 모드</b>${esc(n.extra)}</span>` : ''}`;
 
   $('narrTools').innerHTML = scene.id === 'forgery'
     ? `<div class="seg" role="group" aria-label="변조 유형">${flow.ATTACK_KINDS.map((k) => `<button type="button" data-attack="${k}" aria-pressed="${(beat.attack || 'birth') === k}">${ATTACK_LABEL[k]}</button>`).join('')}</div>`
@@ -344,7 +346,7 @@ function render() {
   if (compare) {
     $('compare').innerHTML = compareHtml();
   } else {
-    const v = sceneView(D, st.pos);
+    const v = sceneView(D, st.pos, { large: st.large });
     lastView = v;
     if (v.wire !== shownWire) { shownWire = v.wire; $('wire').innerHTML = v.wire; }
     $('labelLeft').textContent = scene.left;
@@ -396,6 +398,7 @@ function syncUrl() {
     const q = new URLSearchParams(location.search);
     q.set('scene', String(st.pos.s + 1));
     q.set('beat', String(st.pos.b + 1));
+    if (st.large) q.set('large', '1'); else q.delete('large');
     history.replaceState(null, '', `?${q}`);
   } catch { /* file:// 등 */ }
 }
@@ -506,6 +509,7 @@ function bind() {
   $('btnPrev').addEventListener('click', () => { stopForManual(); prev(); });
   $('btnRestart').addEventListener('click', () => restart(false));
   $('btnPlay').addEventListener('click', () => setPlaying(!st.playing));
+  $('largeMode').addEventListener('change', (e) => setLarge(e.target.checked));
   $('btnDrawer').addEventListener('click', () => setDrawer(!st.drawer));
   $('btnDrawerClose').addEventListener('click', () => setDrawer(false));
   $('phoneSwitch').addEventListener('click', (e) => {
@@ -543,6 +547,14 @@ function bind() {
   }).observe($('stage'));
 }
 
+/** 큰 글씨 모드: 손님 폰은 글자·버튼을 키우고 대비를 높이며, 매장 폰은 결과 문구와 아이콘을 키운다. 자동 재생은 그대로 이어진다 */
+function setLarge(on) {
+  st.large = on;
+  $('largeMode').checked = on;
+  document.documentElement.dataset.large = on ? '1' : '0';
+  if (D) { render(); syncUrl(); }
+}
+
 function onKey(key) {
   if (key === 'ArrowRight') { stopForManual(); next(); return true; }
   if (key === 'ArrowLeft') { stopForManual(); prev(); return true; }
@@ -560,6 +572,7 @@ async function main() {
   }
   buildNav();
   bind();
+  setLarge(largeFromQuery(location.search));
   await reset();
   const pos = posFromQuery(location.search);
   // 바로 뒤 장면으로 들어와도 앞 장면 데이터가 실제로 만들어지도록 순서대로 준비한다

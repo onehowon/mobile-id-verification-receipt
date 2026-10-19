@@ -102,3 +102,33 @@ describe('장면 흐름 (실제 서명·검증)', () => {
     assert.equal(r.expired.failed, 'freshness');
   });
 });
+
+describe('큰 글씨 모드', () => {
+  test('?large=1 로 켜고, 없거나 다른 값이면 꺼진다', async () => {
+    const { largeFromQuery } = await import('../lib/scenes.js');
+    assert.equal(largeFromQuery('?scene=1&large=1'), true);
+    assert.equal(largeFromQuery('?large=true'), true);
+    assert.equal(largeFromQuery('?scene=1'), false);
+    assert.equal(largeFromQuery('?large=0'), false);
+  });
+
+  test('자막 덧붙임은 장면 ① 동의 단계에만, 큰 글씨 모드일 때만 한 줄', async () => {
+    const { narration } = await import('../lib/scenes.js');
+    const withExtra = SCENES.flatMap((s, si) => s.beats.map((b, bi) => ({ si, bi, b }))).filter((x) => x.b.narrLarge);
+    assert.deepEqual(withExtra.map((x) => [x.si, x.bi]), [[0, 2]]);
+    const beat = withExtra[0].b;
+    assert.equal(narration(beat).extra, '');
+    assert.equal(narration(beat, { large: true }).extra, beat.narrLarge);
+    assert.match(beat.narrLarge, /요\.$/);
+    assert.doesNotMatch(beat.narrLarge, /\n|누구나|완벽|반드시/);
+    assert.equal(narration(SCENES[0].beats[0], { large: true }).extra, '');
+  });
+
+  test('큰 글씨 모드 색은 모두 대비 7:1 이상', async () => {
+    const { LARGE_PAIRS, LARGE_TARGET, contrastRatio } = await import('../lib/contrast.js');
+    assert.equal(contrastRatio('#000000', '#ffffff'), 21);
+    assert.equal(contrastRatio('#fff', '#fff'), 1);
+    assert.equal(contrastRatio('#6d7882', '#ffffff'), 4.5); // 기본 모드 보조 글자 (AA 경계)
+    for (const p of LARGE_PAIRS) assert.ok(contrastRatio(p.fg, p.bg) >= LARGE_TARGET, `${p.use} ${contrastRatio(p.fg, p.bg)}`);
+  });
+});

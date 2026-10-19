@@ -2,6 +2,7 @@
 // 사용: python3 scripts/serve.py 8799 &
 //       node scripts/shoot.mjs http://localhost:8799/ docs/screens          장면 × 화면 크기 스크린샷
 //       node scripts/shoot.mjs http://localhost:8799/ docs/screens --play   자동 재생을 처음부터 끝까지 한 번(약 2분)
+//       node scripts/shoot.mjs http://localhost:8799/ docs/screens --play --large   큰 글씨 모드로 자동 재생
 import { spawn } from 'node:child_process';
 import { mkdtempSync, writeFileSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -10,6 +11,7 @@ import { join } from 'node:path';
 const BASE = process.argv[2] || 'http://localhost:8799/';
 const OUT = process.argv[3] || 'docs/screens';
 const PLAY = process.argv.includes('--play');
+const PLAY_LARGE = process.argv.includes('--large');
 const ONLY = process.argv.find((a) => a.startsWith('--only='))?.slice(7);
 const CHROME = process.env.CHROME || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 const PORT = 9333;
@@ -28,6 +30,12 @@ const SCENES = [
   { name: '4-compare', q: 'scene=4', mobile: true },
   { name: '5-sealed', q: 'scene=5&beat=3', mobile: true },
 ];
+// 큰 글씨 모드 (?large=1): 장면 ① 촬영·동의·결과
+const LARGE = [
+  { name: '1L-scan-ok', q: 'scene=1&beat=2&large=1', wait: 3200, expect: 'ok', large: true },
+  { name: '1L-consent', q: 'scene=1&beat=3&large=1', large: true },
+  { name: '1L-result', q: 'scene=1&beat=4&large=1', large: true },
+].map((s) => ({ ...s, mobile: true }));
 const VIEWPORTS = [
   { tag: '1440', width: 1440, height: 900 },
   { tag: '1280', width: 1280, height: 720 },
@@ -35,8 +43,10 @@ const VIEWPORTS = [
 const MOBILE = { tag: 'mobile', width: 390, height: 844, deviceScaleFactor: 2, mobile: true };
 
 const SHOTS = [
-  ...SCENES.flatMap((s) => VIEWPORTS.map((v) => ({ ...s, file: `${s.name}-${v.tag}.png`, vp: v }))),
-  ...SCENES.filter((s) => s.mobile).map((s) => ({ ...s, file: `${s.name}-mobile.png`, vp: MOBILE })),
+  ...[...SCENES, ...LARGE].flatMap((s) => VIEWPORTS.map((v) => ({ ...s, file: `${s.name}-${v.tag}.png`, vp: v }))),
+  ...[...SCENES, ...LARGE].filter((s) => s.mobile).map((s) => ({ ...s, file: `${s.name}-mobile.png`, vp: MOBILE })),
+  // 큰 글씨 모드 1장 (1440): 장면 ① 동의 시트
+  { file: 'proposal-4-large.png', q: 'scene=1&beat=3&large=1', vp: VIEWPORTS[0], large: true },
   { file: 'drawer-1440.png', q: 'scene=1&beat=4&drawer=1', vp: VIEWPORTS[0] },
   { file: 'drawer-audit-1440.png', q: 'scene=3&beat=3&drawer=1', vp: VIEWPORTS[0] },
   { file: 'drawer-scan-1440.png', q: 'scene=1&beat=2&drawer=1', vp: VIEWPORTS[0], wait: 3200, expect: 'ok' },
@@ -53,6 +63,8 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const LAYOUT_CHECK = `(async () => {
   const out = [];
   const R = (el) => el.getBoundingClientRect();
+  const large = document.documentElement.dataset.large === '1';
+  if (large !== new URLSearchParams(location.search).has('large')) out.push('큰 글씨 모드 상태가 주소와 다름');
   if (document.documentElement.scrollWidth > innerWidth) out.push('가로 넘침');
   const controls = R(document.querySelector('.controls'));
   const stage = document.getElementById('stage');
@@ -69,7 +81,9 @@ const LAYOUT_CHECK = `(async () => {
         if (!c.getScrollElement || c.closest('ion-modal')) continue;
         const sc = await c.getScrollElement();
         const over = sc.scrollHeight - sc.clientHeight;
-        if (over > 1) out.push(id + ': 폰 안 본문이 ' + over + 'px 넘침(스크롤 필요)');
+        // 큰 글씨 모드는 iOS 동적 글꼴처럼 본문 안에서 스크롤해도 된다. 다만 실제로 스크롤할 수 있어야 한다
+        const scrollable = ['auto', 'scroll'].includes(getComputedStyle(sc).overflowY);
+        if (over > 1 && !(large && scrollable)) out.push(id + ': 폰 안 본문이 ' + over + 'px 넘침(스크롤 필요)');
       }
       for (const m of doc.querySelectorAll('ion-modal')) {
         const sheet = m.querySelector('.sheet');
@@ -85,7 +99,8 @@ const LAYOUT_CHECK = `(async () => {
         if (parts.at(-1).bottom > doc.defaultView.innerHeight + 0.5) out.push(id + ': 카메라 버튼이 화면 밖');
         if (cam.querySelector('.cam-feed') && !cam.querySelector('.cam-feed').complete) out.push(id + ': 카메라 사진이 안 그려짐');
       }
-      for (const el of doc.querySelectorAll('.result-title, .lead, ion-label h3, ion-label p, ion-note')) {
+      if (large && doc.documentElement.classList.contains('large') !== true) out.push(id + ': 폰에 큰 글씨 모드가 안 들어감');
+      for (const el of doc.querySelectorAll('.result-title, .lead, .sheet-note, .text-link, .cam-hint, ion-label h3, ion-label p, ion-note')) {
         if (el.scrollWidth > el.clientWidth + 1) out.push(id + ': 가로 잘림 「' + el.textContent.trim().slice(0, 20) + '」');
       }
     }
@@ -157,7 +172,7 @@ async function shoot(errors, problems) {
 async function playThrough(errors, problems) {
   const tab = await openTab(errors, 'autoplay');
   await tab.send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
-  await tab.send('Page.navigate', { url: BASE });
+  await tab.send('Page.navigate', { url: PLAY_LARGE ? `${BASE}?large=1` : BASE });
   await waitReady(tab.evaluate, 'autoplay', errors);
   await tab.evaluate(`document.getElementById('btnPlay').click()`);
   const t0 = Date.now();

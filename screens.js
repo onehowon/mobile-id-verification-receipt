@@ -130,7 +130,15 @@ function cameraPage(D) {
 </div>`;
 }
 
-function sceneAdult(D, b) {
+/** 큰 글씨 모드 동의 시트: 핵심 문장 하나, 보조 한 줄, 버튼은 [보내기] 하나, 취소는 텍스트 링크 */
+function consentLarge() {
+  return `<p class="sheet-to">${esc(STORE)}</p>
+    <p class="lead lead-one">이 매장에 '청소년 아님'만 보내요</p>
+    <p class="sheet-note">이름과 생년월일은 보내지 않아요.</p>
+    <div class="sheet-btn">${button('보내기')}<button type="button" class="text-link" data-act="prev">취소</button></div>`;
+}
+
+function sceneAdult(D, b, { large = false } = {}) {
   const now = D.adult?.at || D.req1At || Date.now();
   const t = hhmm(now);
   let left, right, w;
@@ -142,7 +150,7 @@ function sceneAdult(D, b) {
       title: '내 신분증', app: WALLET,
       body: `${idCard(P.adult)}${group('제출 내역', [item('아직 제출한 내역이 없어요', {})])}`,
       footer: button('QR 스캔', { fill: 'outline', disabled: b === 2 }),
-      sheet: b === 2 ? `<p class="lead">${esc(STORE)}에<br>'청소년 아님(연 나이 기준)' 여부만 보내요</p>
+      sheet: b === 2 && large ? consentLarge() : b === 2 ? `<p class="lead">${esc(STORE)}에<br>'청소년 아님(연 나이 기준)' 여부만 보내요</p>
         ${group('보내는 정보', [item('청소년이 아닌지', { sub: '예 / 아니오 하나 · 1회용 증명', mark: CHECK })])}
         ${group('보내지 않는 정보', [item('이름 · 생년월일 · 출생연도', { cls: 'give-no' })], `${PURPOSE_LABELS[D.req1.purpose] || D.req1.purpose} · 이 판매 1건에만 쓰여요`)}
         <div class="sheet-btn">${button('보내기')}</div>` : '',
@@ -381,6 +389,6 @@ function sceneSealed(D, b) {
 }
 
 /** 지금 장면의 두 폰 화면과 가운데 카드 */
-export function sceneView(D, { s, b }) {
-  return { adult: sceneAdult, forgery: sceneForgery, audit: sceneAudit, sealed: sceneSealed }[SCENES[s].id](D, b);
+export function sceneView(D, { s, b }, opts = {}) {
+  return { adult: sceneAdult, forgery: sceneForgery, audit: sceneAudit, sealed: sceneSealed }[SCENES[s].id](D, b, opts);
 }

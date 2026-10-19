@@ -33,7 +33,14 @@
     <nav class="scene-nav" aria-label="장면 선택">
       <ol id="sceneNav"></ol>
     </nav>
-    <button type="button" class="krds-btn small tertiary drawer-toggle" id="btnDrawer" aria-expanded="false" aria-controls="drawer">기술 상세</button>
+    <div class="top-tools">
+      <div class="krds-form-toggle-switch medium large-toggle">
+        <input type="checkbox" role="switch" id="largeMode" aria-describedby="largeModeDesc">
+        <label for="largeMode"><span class="switch-toggle" aria-hidden="true"><i></i></span><span>큰 글씨 모드</span></label>
+        <span class="sr-only" id="largeModeDesc">손님 폰 글자·버튼을 키우고 대비를 높여요</span>
+      </div>
+      <button type="button" class="krds-btn small tertiary drawer-toggle" id="btnDrawer" aria-expanded="false" aria-controls="drawer">기술 상세</button>
+    </div>
   </header>
 
   <main id="main" class="main" tabindex="-1">

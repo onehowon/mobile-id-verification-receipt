@@ -218,3 +218,70 @@ html.frameless .cam-hint { margin: 0; font-size: 16px; padding: 8px 14px; }
 html.frameless .cam-hint br { display: none; }
 html.frameless .cam-status { margin: 10px 0 12px; height: 36px; }
 html.frameless .cam-btn { width: 48px; height: 48px; }
+
+/* ---------- 큰 글씨 모드 (바깥 [큰 글씨 모드] 또는 ?large=1) ----------
+   iOS 동적 글꼴 「더 큰 크기」처럼 본문 약 1.35배, 버튼 높이 확대, 보조 글자도 대비 7:1 이상(KRDS gray-70).
+   손님 폰(왼쪽)은 화면 전체, 매장 폰(오른쪽)은 결과 문구·아이콘만 키운다. 넘치면 본문 안에서 스크롤한다. */
+html.large[data-role="customer"] {
+  --sub: #464c53;
+  --ok: #1f4727;
+  --primary: #083891;
+  --ion-color-primary: #083891;
+  --ion-color-primary-rgb: 8, 56, 145;
+  --ion-color-primary-shade: #052561;
+  --ion-color-primary-tint: #0b50d0;
+}
+html.large[data-role="customer"] ion-header ion-title { font-size: 19px; color: var(--ink); }
+html.large[data-role="customer"] .large-title { font-size: 36px; margin-bottom: 20px; }
+html.large[data-role="customer"] .page-sub { font-size: 20px; }
+html.large[data-role="customer"] .group-label { margin-bottom: 8px; font-size: 19px; font-weight: 600; }
+html.large[data-role="customer"] .group-foot { font-size: 19px; line-height: 1.45; }
+html.large[data-role="customer"] ion-item { --min-height: 64px; }
+html.large[data-role="customer"] ion-item ion-label h3 { font-size: 23px !important; line-height: 1.35 !important; }
+html.large[data-role="customer"] ion-item ion-label p { font-size: 20px !important; color: var(--sub) !important; }
+html.large[data-role="customer"] ion-item ion-note { font-size: 21px; }
+html.large[data-role="customer"] .give-no ion-label h3 { color: var(--sub) !important; }
+html.large[data-role="customer"] ion-badge { font-size: 17px; --padding-top: 5px; --padding-bottom: 5px; }
+html.large[data-role="customer"] ion-button[size="large"] { height: 68px; font-size: 23px; font-weight: 700; }
+html.large[data-role="customer"] .lead { font-size: 27px; line-height: 1.35; }
+html.large[data-role="customer"] .idcard-top { font-size: 17px; }
+html.large[data-role="customer"] .idcard-name { font-size: 29px; }
+html.large[data-role="customer"] .idcard dl { font-size: 19px; }
+html.large[data-role="customer"] .idcard-photo { width: 64px; height: 80px; }
+html.large[data-role="customer"] .idcard-note, html.large[data-role="customer"] .tagline, html.large[data-role="customer"] .photo-cap { font-size: 17px; }
+html.large[data-role="customer"] .waiting { font-size: 19px; }
+/* 동의 시트: 핵심 문장 하나 + 보조 한 줄 + [보내기] + 텍스트 링크 [취소] */
+.sheet-to { margin: 0 20px 6px; font-size: 20px; font-weight: 600; color: var(--sub); }
+.lead.lead-one { margin-bottom: 10px; font-size: 32px; line-height: 1.3; letter-spacing: -.03em; word-break: keep-all; }
+.sheet-note { margin: 0 20px 22px; font-size: 21px; line-height: 1.4; color: var(--sub); }
+.text-link { display: block; width: 100%; margin: 6px 0 0; padding: 14px 0; border: 0; background: none; font: 600 22px/1.2 var(--ion-font-family); color: var(--primary); text-decoration: underline; text-underline-offset: 4px; cursor: pointer; }
+.text-link:focus-visible { outline: 3px solid var(--primary); outline-offset: 2px; border-radius: 8px; }
+/* 카메라: 안내 문구를 크게, 반투명 대신 진한 바탕(대비 18:1) */
+html.large[data-role="customer"] .cam-title { font-size: 20px; }
+html.large[data-role="customer"] .cam-hint { padding: 12px 18px; background: #131416; font-size: 26px; line-height: 1.35; }
+html.large[data-role="customer"] .cam-status { height: 46px; }
+html.large[data-role="customer"] .cam-pill { padding: 10px 18px; border-radius: 24px; font-size: 21px; }
+html.large[data-role="customer"] .cam-pill svg { width: 24px; height: 24px; }
+html.large[data-role="customer"] .cam-btn { width: 64px; height: 64px; }
+html.large[data-role="customer"] .cam-btn ion-icon { font-size: 30px; }
+/* 프레임 없는 좁은 화면에서도 같은 크기 (기본 모드의 축소 규칙보다 우선) */
+html.large.frameless[data-role="customer"] .large-title { font-size: 30px; }
+html.large.frameless[data-role="customer"] ion-item ion-label h3 { font-size: 22px !important; }
+html.large.frameless[data-role="customer"] ion-item ion-label p { font-size: 19px !important; }
+html.large.frameless[data-role="customer"] .lead { font-size: 25px; }
+html.large.frameless[data-role="customer"] .lead.lead-one { font-size: 29px; }
+html.large.frameless[data-role="customer"] ion-button[size="large"] { height: 62px; }
+html.large.frameless[data-role="customer"] .cam-hint { font-size: 23px; padding: 10px 16px; }
+html.large.frameless[data-role="customer"] .cam-status { height: 44px; }
+
+/* 매장 폰: 직원이 한눈에 보도록 결과 아이콘·문구만 키운다 */
+html.large[data-role="store"] .result-icon { width: 96px; height: 96px; }
+html.large[data-role="store"] .result > ion-badge { font-size: 17px; --padding-top: 5px; --padding-bottom: 5px; }
+html.large[data-role="store"] .result-title { font-size: 32px; line-height: 1.3; color: var(--ink); }
+html.large[data-role="store"] .result.is-bad .result-title { color: #8a240f; }
+html.large ion-badge.soft-ok { --color: #1f4727; }
+html.large[data-role="store"] .result-sub { font-size: 19px; color: #464c53; }
+html.large.frameless[data-role="store"] .result-icon { width: 72px; height: 72px; }
+html.large.frameless[data-role="store"] .result-title { font-size: 27px; }
+html.large.frameless[data-role="store"] .result.is-compact .result-icon { width: 40px; height: 40px; }
+html.large.frameless[data-role="store"] .result.is-compact .result-title { font-size: 24px; }
