@@ -1,0 +1,12 @@
+{
+  "name": "poc-verification-receipt",
+  "version": "0.1.0",
+  "private": true,
+  "description": "모바일신분증 검증 결과 영수증 PoC (데모)",
+  "type": "module",
+  "scripts": {
+    "test": "node --test test/*.test.mjs",
+    "serve": "python3 -m http.server 8000"
+  },
+  "license": "MIT"
+}

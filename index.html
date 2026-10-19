@@ -1,0 +1,355 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>검증 결과 영수증 PoC</title>
+<meta name="description" content="모바일신분증 검증 결과 영수증 시연 (가상 데이터, 데모용)">
+<!-- KRDS 대한민국 디지털 정부 디자인 시스템 HTML 컴포넌트 (krds-uiux 1.1.0) -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/krds-uiux@1.1.0/resources/cdn/krds.min.css">
+<!-- KRDS 기본 서체 Pretendard GOV -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard-gov-dynamic-subset.min.css">
+<link rel="stylesheet" href="app.css">
+<link rel="icon" href="data:,">
+<!-- QR 생성 / QR 인식 (없으면 텍스트 붙여넣기로 동작) -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js" defer></script>
+<script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js" defer></script>
+<script type="module" src="app.js"></script>
+</head>
+<body>
+<a class="skip-link sr-only" href="#main">본문 바로가기</a>
+
+<div class="demo-notice" role="note">
+  <div class="inner">
+    <span class="krds-badge bg-warning">데모</span>
+    <p>가상 데이터·데모용 화면입니다. 실제 정부 서비스가 아니며 행안부 시스템과 연결되어 있지 않습니다. 모든 키와 인물은 가상입니다.</p>
+  </div>
+</div>
+
+<header class="site-header">
+  <div class="inner">
+    <p class="site-kicker">2026 모바일신분증 아이디어 공모전 · 개념 검증(PoC)</p>
+    <h1 class="site-title">검증 결과 영수증</h1>
+    <p class="site-lead">매장은 신분증 화면 대신 발급기관 서명으로 검증된 결과(만 19세 이상 Y/N)만 받고, 개인정보 없는 서명 영수증을 보관합니다.</p>
+  </div>
+</header>
+
+<main id="main" class="inner">
+  <ol class="krds-step-wrap flow-steps" id="flowSteps" aria-label="시연 진행 단계">
+    <li data-step="issue"><span><i class="step">1단계</i><span class="step-tit">자격증명 발급</span></span></li>
+    <li data-step="present"><span><i class="step">2단계</i><span class="step-tit">결과만 제시</span></span></li>
+    <li data-step="verify"><span><i class="step">3단계</i><span class="step-tit">검증</span></span></li>
+    <li data-step="receipt"><span><i class="step">4단계</i><span class="step-tit">영수증 보관</span></span></li>
+  </ol>
+
+  <div class="krds-tab-area layer">
+    <div class="tab line tab-scroll">
+      <ul role="tablist" id="tablist">
+        <li role="tab" id="tab-issuer" aria-controls="panel-issuer" aria-selected="true" class="active"><button type="button" class="btn-tab" data-tab="issuer">발급기관</button></li>
+        <li role="tab" id="tab-wallet" aria-controls="panel-wallet" aria-selected="false"><button type="button" class="btn-tab" data-tab="wallet">지갑</button></li>
+        <li role="tab" id="tab-verifier" aria-controls="panel-verifier" aria-selected="false"><button type="button" class="btn-tab" data-tab="verifier">검증(매장)</button></li>
+        <li role="tab" id="tab-dispute" aria-controls="panel-dispute" aria-selected="false"><button type="button" class="btn-tab" data-tab="dispute">분쟁 검증</button></li>
+        <li role="tab" id="tab-tamper" aria-controls="panel-tamper" aria-selected="false"><button type="button" class="btn-tab" data-tab="tamper">위조 시연</button></li>
+        <li role="tab" id="tab-measure" aria-controls="panel-measure" aria-selected="false"><button type="button" class="btn-tab" data-tab="measure">측정</button></li>
+        <li role="tab" id="tab-sealed" aria-controls="panel-sealed" aria-selected="false"><button type="button" class="btn-tab" data-tab="sealed">확장: 봉인 사본</button></li>
+      </ul>
+    </div>
+
+    <div class="tab-conts-wrap">
+
+      <!-- 1. 발급기관 -->
+      <section id="panel-issuer" class="tab-conts active" aria-labelledby="tab-issuer">
+        <h2 class="panel-title">가상 발급기관 <small>행안부 발급 역할</small></h2>
+        <p class="panel-desc">테스트 신원으로 SD-JWT 형식의 자격증명을 발급합니다. 항목마다 무작위 salt를 붙여 해시만 서명하므로, 홀더는 나중에 필요한 항목만 골라 공개할 수 있습니다.</p>
+
+        <div class="layout-2">
+          <div class="box">
+            <h3 class="box-title">테스트 신원</h3>
+            <div class="fieldset">
+              <div class="form-group">
+                <div class="form-tit"><label for="issName">이름</label></div>
+                <div class="form-conts"><input type="text" id="issName" class="krds-input" value="김민준" autocomplete="off"></div>
+              </div>
+              <div class="form-group">
+                <div class="form-tit"><label for="issBirth">생년월일</label></div>
+                <div class="form-conts"><input type="date" id="issBirth" class="krds-input" value="1995-03-14"></div>
+                <p class="form-hint">가상 인물입니다. 실제 개인정보를 넣지 마세요.</p>
+              </div>
+            </div>
+            <div class="btn-row">
+              <button type="button" class="krds-btn small tertiary" data-preset="adult">성인 예시</button>
+              <button type="button" class="krds-btn small tertiary" data-preset="minor">미성년 예시</button>
+            </div>
+            <div class="btn-row">
+              <button type="button" class="krds-btn primary medium" id="btnIssue">발급하여 지갑에 저장</button>
+            </div>
+          </div>
+
+          <div class="box">
+            <h3 class="box-title">발급 결과</h3>
+            <div id="issueOut"><p class="muted">아직 발급하지 않았습니다.</p></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 2. 지갑 -->
+      <section id="panel-wallet" class="tab-conts" aria-labelledby="tab-wallet" hidden>
+        <h2 class="panel-title">홀더 지갑 <small>이용자 휴대폰</small></h2>
+        <p class="panel-desc">검증 요청을 받으면 「만 19세 이상」 항목만 골라 기기 키로 서명한 제시물(VP)을 QR로 보여줍니다. 이름과 생년월일은 나가지 않습니다.</p>
+
+        <div class="layout-2">
+          <div class="box">
+            <h3 class="box-title">내 자격증명</h3>
+            <div id="walletCred"></div>
+          </div>
+
+          <div class="box">
+            <h3 class="box-title">검증 요청 받기</h3>
+            <div class="form-group">
+              <div class="form-tit"><label for="reqIn">요청 내용 (매장 QR)</label></div>
+              <div class="form-conts"><textarea id="reqIn" class="krds-input mono" rows="3" placeholder="매장 검증 요청 QR을 스캔하거나 붙여넣으세요"></textarea></div>
+            </div>
+            <div class="btn-row">
+              <button type="button" class="krds-btn small secondary" id="btnReqScan">카메라로 스캔</button>
+              <button type="button" class="krds-btn small tertiary" id="btnReqLocal">이 기기 매장 요청 불러오기</button>
+            </div>
+            <div id="scanReq" class="scanner" hidden></div>
+            <div id="consent"></div>
+          </div>
+        </div>
+
+        <div class="box" id="vpBox" hidden>
+          <h3 class="box-title">제시 QR</h3>
+          <div class="qr-layout">
+            <canvas id="vpQr" class="qr" width="640" height="640" aria-label="제시물 QR 코드"></canvas>
+            <div>
+              <p id="vpMeta" class="muted"></p>
+              <div class="krds-disclosure conts-expand-area">
+                <details>
+                  <summary class="krds-btn small text">제시물 원문 보기</summary>
+                  <textarea id="vpText" class="krds-input mono" rows="5" readonly></textarea>
+                </details>
+              </div>
+              <div class="btn-row">
+                <button type="button" class="krds-btn small secondary" id="btnVpCopy">원문 복사</button>
+                <button type="button" class="krds-btn small primary" id="btnVpSend">검증 탭으로 보내기 (같은 기기)</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="box">
+          <h3 class="box-title">제출 내역 <small>이용자만 봄</small></h3>
+          <div id="walletHistory"></div>
+        </div>
+      </section>
+
+      <!-- 3. 검증(매장) -->
+      <section id="panel-verifier" class="tab-conts" aria-labelledby="tab-verifier" hidden>
+        <h2 class="panel-title">검증기 <small>행안부 검증앱 역할 · 매장</small></h2>
+        <p class="panel-desc">영수증 발급은 행안부 검증앱 안에서만 이뤄진다는 전제입니다. 매장 키는 가상 등록기관이 서명한 인증서로 묶여 있습니다.</p>
+
+        <div class="layout-2">
+          <div class="box">
+            <h3 class="box-title">① 검증 요청</h3>
+            <p class="muted" id="storeInfo"></p>
+            <div class="btn-row"><button type="button" class="krds-btn primary medium" id="btnNewReq">새 검증 요청 만들기</button></div>
+            <div id="reqOut" hidden>
+              <canvas id="reqQr" class="qr small" width="400" height="400" aria-label="검증 요청 QR 코드"></canvas>
+              <p class="muted" id="reqMeta"></p>
+            </div>
+          </div>
+
+          <div class="box">
+            <h3 class="box-title">② 제시물 받기</h3>
+            <div class="form-group">
+              <div class="form-tit"><label for="vpIn">제시물 (손님 QR)</label></div>
+              <div class="form-conts"><textarea id="vpIn" class="krds-input mono" rows="4" placeholder="손님 QR을 스캔하거나 붙여넣으세요"></textarea></div>
+            </div>
+            <div class="btn-row">
+              <button type="button" class="krds-btn small secondary" id="btnVpScan">카메라로 스캔</button>
+              <label class="krds-btn small tertiary file-btn">이미지에서 읽기<input type="file" accept="image/*" id="vpImg" hidden></label>
+              <button type="button" class="krds-btn small tertiary" id="btnVpLocal">지갑 제시물 불러오기</button>
+            </div>
+            <div id="scanVp" class="scanner" hidden></div>
+            <div class="btn-row"><button type="button" class="krds-btn primary medium" id="btnVerify">검증</button></div>
+          </div>
+        </div>
+
+        <div id="verifyOut"></div>
+
+        <div class="box">
+          <h3 class="box-title">보관 중인 영수증 <small>매장 보관, 90일 후 파기</small></h3>
+          <div id="receiptList"></div>
+        </div>
+
+        <div class="box">
+          <h3 class="box-title">검증 통계 <small>등록기관에는 건수만 집계</small></h3>
+          <div id="stats"></div>
+        </div>
+      </section>
+
+      <!-- 4. 분쟁 검증 -->
+      <section id="panel-dispute" class="tab-conts" aria-labelledby="tab-dispute" hidden>
+        <h2 class="panel-title">분쟁 검증 <small>단속·분쟁 시 제3자 확인</small></h2>
+        <p class="panel-desc">업주가 낸 영수증을 누구나 확인할 수 있습니다. 매장 인증서(등록기관 서명) → 매장 서명 → 필드 → 보관 기한 순으로 검사하고, 개인정보가 없다는 것을 보여줍니다.</p>
+        <div class="box">
+          <div class="form-group">
+            <div class="form-tit"><label for="rcIn">영수증</label></div>
+            <div class="form-conts"><textarea id="rcIn" class="krds-input mono" rows="4" placeholder="영수증(JWS)을 붙여넣으세요"></textarea></div>
+          </div>
+          <div class="form-group">
+            <div class="form-tit"><label for="rcPick">보관 목록에서 고르기</label></div>
+            <div class="form-conts"><select id="rcPick" class="krds-form-select"></select></div>
+          </div>
+          <fieldset class="krds-check-area" id="rcWhen">
+            <legend>검증 시점</legend><p class="group-label" aria-hidden="true">검증 시점</p>
+            <div class="krds-form-check"><input type="radio" name="rcWhen" id="rcNow" value="0" checked><label for="rcNow">지금</label></div>
+            <div class="krds-form-check"><input type="radio" name="rcWhen" id="rc30" value="30"><label for="rc30">30일 후</label></div>
+            <div class="krds-form-check"><input type="radio" name="rcWhen" id="rc91" value="91"><label for="rc91">91일 후</label></div>
+          </fieldset>
+          <div class="btn-row">
+            <button type="button" class="krds-btn primary medium" id="btnRcVerify">영수증 검증</button>
+            <button type="button" class="krds-btn small tertiary" id="btnRcTamper">결과 값 바꿔 보기 (변조)</button>
+          </div>
+        </div>
+        <div id="rcOut"></div>
+      </section>
+
+      <!-- 5. 위조 시연 -->
+      <section id="panel-tamper" class="tab-conts" aria-labelledby="tab-tamper" hidden>
+        <h2 class="panel-title">위조 시연</h2>
+        <p class="panel-desc">지금 매장 검증기(같은 nonce 저장소·같은 발급기관 키)에 위조물을 넣습니다. 육안 확인으로는 통과할 수 있는 화면도 서명 검증에서는 실패합니다.</p>
+
+        <div class="box">
+          <h3 class="box-title">장면 1. 생년월일을 고친 캡처 화면</h3>
+          <p class="muted">친구의 모바일 신분증 화면을 캡처해 생년월일만 고친 이미지입니다. 검증기는 화면 글자를 읽지 않고, 이미지 안 QR의 서명만 봅니다.</p>
+          <div class="capture-layout">
+            <canvas id="capCanvas" width="720" height="1120" class="capture" aria-label="위조된 신분증 캡처 이미지"></canvas>
+            <div>
+              <div class="form-group">
+                <div class="form-tit"><label for="capBirth">이미지에 그릴 생년월일 (위조)</label></div>
+                <div class="form-conts"><input type="date" id="capBirth" class="krds-input" value="2000-01-01"></div>
+              </div>
+              <div class="btn-row">
+                <button type="button" class="krds-btn small secondary" id="btnCapMake">캡처 이미지 만들기</button>
+                <button type="button" class="krds-btn primary medium" id="btnCapScan">이 이미지를 검증기로 스캔</button>
+              </div>
+              <p class="muted" id="capNote"></p>
+            </div>
+          </div>
+          <div id="capOut"></div>
+        </div>
+
+        <div class="box">
+          <h3 class="box-title">장면 2. 변조 제시물</h3>
+          <div class="krds-table-wrap">
+            <table class="tbl col data">
+              <caption>변조 유형별 공격 방식과 실행 버튼</caption>
+              <thead><tr><th scope="col">유형</th><th scope="col">공격 방식</th><th scope="col">막는 검사</th><th scope="col">실행</th></tr></thead>
+              <tbody id="attackRows"></tbody>
+            </table>
+          </div>
+          <div id="attackOut"></div>
+        </div>
+      </section>
+
+      <!-- 6. 측정 -->
+      <section id="panel-measure" class="tab-conts" aria-labelledby="tab-measure" hidden>
+        <h2 class="panel-title">측정</h2>
+        <div class="box">
+          <h3 class="box-title">단계 수 비교</h3>
+          <div class="layout-2" id="stepsCompare"></div>
+          <p class="muted">기존 방식의 사람 행동 시간(육안 확인, CCTV 검색)은 이 데모에서 측정하지 않습니다. 아래 표는 기계 검증 시간만 기록합니다.</p>
+        </div>
+        <div class="box">
+          <h3 class="box-title">검증 소요 시간 <small>performance.now(), 이 기기 기준</small></h3>
+          <div class="btn-row">
+            <button type="button" class="krds-btn primary medium" id="btnBench">정상 검증 30회 실행</button>
+            <button type="button" class="krds-btn small secondary" id="btnCsv">CSV 내보내기</button>
+            <button type="button" class="krds-btn small tertiary" id="btnClearM">기록 지우기</button>
+          </div>
+          <div id="measureSummary"></div>
+          <div class="krds-table-wrap scroll-x">
+            <table class="tbl col data">
+              <caption>검증 1회당 단계별 소요 시간(밀리초)</caption>
+              <thead><tr><th scope="col">시각</th><th scope="col">시나리오</th><th scope="col">결과</th><th scope="col">발급기관 서명</th><th scope="col">해시</th><th scope="col">홀더 서명</th><th scope="col">영수증 서명</th><th scope="col">합계</th></tr></thead>
+              <tbody id="measureRows"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- 7. 확장: 봉인 사본 -->
+      <section id="panel-sealed" class="tab-conts" aria-labelledby="tab-sealed" hidden>
+        <h2 class="panel-title">확장: 목적·기한이 묶인 봉인 사본 <small>공공기관 제출</small></h2>
+        <p class="panel-desc">신분증 사진 대신, 받는 기관·목적·기한을 홀더 서명에 묶어 제출합니다. 기한이 지나거나 철회하면 검증에서 무효가 됩니다.</p>
+        <div class="layout-2">
+          <div class="box">
+            <h3 class="box-title">사본 만들기 (지갑)</h3>
+            <div class="fieldset">
+              <div class="form-group">
+                <div class="form-tit"><label for="sRecipient">받는 기관</label></div>
+                <div class="form-conts"><select id="sRecipient" class="krds-form-select">
+                  <option value="GOV-DEMO-0001">가상 구청 민원실</option>
+                  <option value="GOV-DEMO-0002">가상 공단 지사</option>
+                </select></div>
+              </div>
+              <div class="form-group">
+                <div class="form-tit"><label for="sPurpose">목적</label></div>
+                <div class="form-conts"><input type="text" id="sPurpose" class="krds-input" value="전입신고 본인 확인"></div>
+              </div>
+              <fieldset class="krds-check-area">
+                <legend>공개 항목</legend><p class="group-label" aria-hidden="true">공개 항목</p>
+                <div class="krds-form-check"><input type="checkbox" id="sName" checked><label for="sName">이름</label></div>
+                <div class="krds-form-check"><input type="checkbox" id="sBirth" checked><label for="sBirth">생년월일</label></div>
+              </fieldset>
+              <div class="form-group">
+                <div class="form-tit"><label for="sDays">기한</label></div>
+                <div class="form-conts"><select id="sDays" class="krds-form-select">
+                  <option value="1">1일</option>
+                  <option value="7">7일</option>
+                  <option value="30" selected>30일</option>
+                </select></div>
+              </div>
+            </div>
+            <div class="btn-row"><button type="button" class="krds-btn primary medium" id="btnSeal">봉인 사본 만들기</button></div>
+            <div id="sealOut"></div>
+          </div>
+          <div class="box">
+            <h3 class="box-title">사본 확인 (기관)</h3>
+            <div class="form-group">
+              <div class="form-tit"><label for="sIn">제출된 사본</label></div>
+              <div class="form-conts"><textarea id="sIn" class="krds-input mono" rows="4"></textarea></div>
+            </div>
+            <div class="form-group">
+              <div class="form-tit"><label for="sAs">확인하는 기관</label></div>
+              <div class="form-conts"><select id="sAs" class="krds-form-select">
+                <option value="GOV-DEMO-0001">가상 구청 민원실</option>
+                <option value="GOV-DEMO-0002">가상 공단 지사</option>
+              </select></div>
+            </div>
+            <div class="form-group">
+              <div class="form-tit"><label for="sWhen">검증 시점</label></div>
+              <div class="form-conts"><select id="sWhen" class="krds-form-select">
+                <option value="0">지금</option>
+                <option value="after">기한 1일 뒤</option>
+              </select></div>
+            </div>
+            <div class="btn-row"><button type="button" class="krds-btn primary medium" id="btnSealVerify">사본 확인</button></div>
+            <div id="sealVerifyOut"></div>
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
+</main>
+
+<footer class="site-footer">
+  <div class="inner">
+    <p>UI: KRDS 대한민국 디지털 정부 디자인 시스템(krds-uiux 1.1.0) · 서체: Pretendard GOV · 암호: 브라우저 WebCrypto ECDSA P-256</p>
+    <p>모든 처리는 이 브라우저 안에서만 이뤄지며 외부 서버로 전송하지 않습니다.</p>
+  </div>
+</footer>
+</body>
+</html>
